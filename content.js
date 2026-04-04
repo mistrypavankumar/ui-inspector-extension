@@ -8,6 +8,7 @@
   let panelPos = { x: null, y: null }; // Saved drag position
   const colorSwaps = new Map(); // oldHex → { newHex, originals: [{el, prop, orig}] }
   let auditData = null; // Cached audit results
+  let seoData = null; // Cached SEO scan results
 
   /* ── Icons ──────────────────────────────────────────── */
   const IC = {
@@ -26,6 +27,7 @@
     audit:'<svg viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51L12.96 17.55C12.96 17.55 11 21 11 21z"/></svg>',
     warn:'<svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>',
     check:'<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>',
+    seo:'<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>',
   };
 
   /* ── Util ────────────────────────────────────────────── */
@@ -305,6 +307,172 @@
     return { issues, score };
   }
 
+  /* ── Audit: Spacing Consistency ───────────────────────── */
+  function scanSpacing() {
+    const grid = 4; // base grid unit in px
+    const issues = []; // {prop, value, px, nearest, el, selector, count}
+    const seen = new Map(); // "prop:value" → {issue, count}
+    document.querySelectorAll('*').forEach(el => {
+      if (own(el) || !vis(el)) return;
+      const cs = getComputedStyle(el);
+      ['marginTop','marginRight','marginBottom','marginLeft','paddingTop','paddingRight','paddingBottom','paddingLeft'].forEach(prop => {
+        const raw = cs[prop];
+        if (!raw || raw === '0px') return;
+        const px = parseFloat(raw);
+        if (isNaN(px) || px === 0) return;
+        const absPx = Math.abs(px);
+        if (absPx % grid !== 0) {
+          const nearest = Math.round(absPx / grid) * grid * (px < 0 ? -1 : 1);
+          const cssProp = prop.replace(/([A-Z])/g, '-$1').toLowerCase();
+          const key = `${cssProp}:${raw}`;
+          if (seen.has(key)) {
+            seen.get(key).count++;
+          } else {
+            const tag = el.tagName.toLowerCase();
+            const cls = Array.from(el.classList).filter(c => !c.startsWith('uii-')).slice(0, 2);
+            const selector = tag + cls.map(c => '.' + c).join('');
+            const entry = { prop: cssProp, value: raw, px, nearest: nearest + 'px', el, selector, count: 1 };
+            seen.set(key, entry);
+            issues.push(entry);
+          }
+        }
+      });
+    });
+    issues.sort((a, b) => b.count - a.count);
+    const totalChecked = document.querySelectorAll('*').length;
+    return { issues, totalChecked, grid };
+  }
+
+  /* ── SEO Scanner ─────────────────────────────────────── */
+  function scanSEO() {
+    const issues = [];
+    const info = {};
+
+    // Title
+    const title = document.title || '';
+    info.title = title;
+    if (!title) {
+      issues.push({ type: 'missing-title', severity: 'error', desc: 'Page has no <title> tag', fix: 'Add a <title> element in <head> with a descriptive title (50-60 characters).' });
+    } else if (title.length < 30) {
+      issues.push({ type: 'short-title', severity: 'warn', desc: `Title is too short (${title.length} chars): "${title}"`, fix: 'Title should be 50-60 characters for optimal SEO.' });
+    } else if (title.length > 60) {
+      issues.push({ type: 'long-title', severity: 'warn', desc: `Title is too long (${title.length} chars): "${title.slice(0,60)}..."`, fix: 'Title should be 50-60 characters. It may be truncated in search results.' });
+    }
+
+    // Meta description
+    const metaDesc = document.querySelector('meta[name="description"]');
+    info.description = metaDesc ? metaDesc.content : '';
+    if (!metaDesc || !metaDesc.content) {
+      issues.push({ type: 'missing-description', severity: 'error', desc: 'Missing meta description', fix: 'Add <meta name="description" content="..."> with 150-160 characters describing the page.' });
+    } else if (metaDesc.content.length < 70) {
+      issues.push({ type: 'short-description', severity: 'warn', desc: `Meta description is too short (${metaDesc.content.length} chars)`, fix: 'Meta description should be 150-160 characters for optimal search result display.' });
+    } else if (metaDesc.content.length > 160) {
+      issues.push({ type: 'long-description', severity: 'warn', desc: `Meta description is too long (${metaDesc.content.length} chars)`, fix: 'Meta description should be under 160 characters to avoid truncation in search results.' });
+    }
+
+    // Canonical URL
+    const canonical = document.querySelector('link[rel="canonical"]');
+    info.canonical = canonical ? canonical.href : '';
+    if (!canonical) {
+      issues.push({ type: 'missing-canonical', severity: 'warn', desc: 'Missing canonical URL', fix: 'Add <link rel="canonical" href="..."> to prevent duplicate content issues.' });
+    }
+
+    // Open Graph tags
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    const ogDesc = document.querySelector('meta[property="og:description"]');
+    const ogImage = document.querySelector('meta[property="og:image"]');
+    const ogUrl = document.querySelector('meta[property="og:url"]');
+    info.og = { title: ogTitle?.content || '', description: ogDesc?.content || '', image: ogImage?.content || '', url: ogUrl?.content || '' };
+    if (!ogTitle) issues.push({ type: 'missing-og:title', severity: 'warn', desc: 'Missing og:title meta tag', fix: 'Add <meta property="og:title" content="..."> for social media sharing.' });
+    if (!ogDesc) issues.push({ type: 'missing-og:description', severity: 'info', desc: 'Missing og:description meta tag', fix: 'Add <meta property="og:description" content="..."> for social media sharing.' });
+    if (!ogImage) issues.push({ type: 'missing-og:image', severity: 'warn', desc: 'Missing og:image meta tag', fix: 'Add <meta property="og:image" content="..."> with a 1200x630px image for social media sharing.' });
+
+    // Twitter Card
+    const twCard = document.querySelector('meta[name="twitter:card"]');
+    info.twitterCard = twCard?.content || '';
+    if (!twCard) issues.push({ type: 'missing-twitter:card', severity: 'info', desc: 'Missing twitter:card meta tag', fix: 'Add <meta name="twitter:card" content="summary_large_image"> for Twitter sharing.' });
+
+    // Heading structure
+    const headings = [];
+    document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(h => {
+      if (own(h)) return;
+      headings.push({ level: parseInt(h.tagName[1]), text: (h.textContent || '').trim().slice(0, 80), tag: h.tagName });
+    });
+    info.headings = headings;
+    const h1s = headings.filter(h => h.level === 1);
+    if (h1s.length === 0) {
+      issues.push({ type: 'missing-h1', severity: 'error', desc: 'Page has no <h1> element', fix: 'Add a single <h1> element with the main page title.' });
+    } else if (h1s.length > 1) {
+      issues.push({ type: 'multiple-h1', severity: 'warn', desc: `Page has ${h1s.length} <h1> elements`, fix: 'Use only one <h1> per page for clear content hierarchy.' });
+    }
+
+    // Images without alt
+    let imgNoAlt = 0;
+    document.querySelectorAll('img').forEach(img => {
+      if (own(img)) return;
+      if (!img.hasAttribute('alt')) imgNoAlt++;
+    });
+    if (imgNoAlt > 0) {
+      issues.push({ type: 'images-no-alt', severity: 'error', desc: `${imgNoAlt} image${imgNoAlt > 1 ? 's' : ''} missing alt attribute`, fix: 'Add descriptive alt text to all images for accessibility and image search.' });
+    }
+
+    // Robots meta
+    const robots = document.querySelector('meta[name="robots"]');
+    info.robots = robots?.content || '';
+    if (robots && (robots.content.includes('noindex') || robots.content.includes('nofollow'))) {
+      issues.push({ type: 'robots-restricted', severity: 'info', desc: `Robots meta: "${robots.content}"`, fix: 'This page has crawling restrictions. Ensure this is intentional.' });
+    }
+
+    // Viewport meta
+    const viewport = document.querySelector('meta[name="viewport"]');
+    info.viewport = viewport?.content || '';
+    if (!viewport) {
+      issues.push({ type: 'missing-viewport', severity: 'error', desc: 'Missing viewport meta tag', fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1"> for mobile responsiveness.' });
+    }
+
+    // Lang attribute
+    const lang = document.documentElement.getAttribute('lang');
+    info.lang = lang || '';
+    if (!lang) {
+      issues.push({ type: 'missing-lang', severity: 'warn', desc: 'Missing lang attribute on <html>', fix: 'Add lang="en" (or appropriate language) to the <html> element.' });
+    }
+
+    // Structured data / JSON-LD
+    const jsonLd = document.querySelectorAll('script[type="application/ld+json"]');
+    info.structuredData = jsonLd.length;
+    if (jsonLd.length === 0) {
+      issues.push({ type: 'no-structured-data', severity: 'info', desc: 'No structured data (JSON-LD) found', fix: 'Add JSON-LD structured data for rich search result snippets (e.g., Organization, Article, Product).' });
+    }
+
+    // Links analysis
+    const links = { internal: 0, external: 0, nofollow: 0, broken: [] };
+    document.querySelectorAll('a[href]').forEach(a => {
+      if (own(a)) return;
+      const href = a.getAttribute('href') || '';
+      if (href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+      if (href.startsWith('http') && !href.includes(location.hostname)) {
+        links.external++;
+      } else {
+        links.internal++;
+      }
+      if ((a.getAttribute('rel') || '').includes('nofollow')) links.nofollow++;
+      if (!a.textContent.trim() && !a.querySelector('img[alt]') && !a.getAttribute('aria-label')) {
+        links.broken.push({ href: href.slice(0, 60), issue: 'empty-anchor' });
+      }
+    });
+    info.links = links;
+    if (links.broken.length > 0) {
+      issues.push({ type: 'empty-links', severity: 'warn', desc: `${links.broken.length} link${links.broken.length > 1 ? 's' : ''} with no anchor text`, fix: 'Add descriptive text to all links for accessibility and SEO.' });
+    }
+
+    // Score
+    const weights = { error: 12, warn: 5, info: 1 };
+    const deductions = issues.reduce((s, i) => s + (weights[i.severity] || 0), 0);
+    const score = Math.max(0, 100 - deductions);
+
+    return { issues, info, score };
+  }
+
   /* ── Run full audit ─────────────────────────────────── */
   async function runAudit() {
     const shifts = await scanLayoutShifts();
@@ -312,11 +480,12 @@
     const images = scanImages();
     const { unused, totalRules, skippedSheets } = scanUnusedCSS();
     const a11y = scanAccessibility();
+    const spacing = scanSpacing();
     const totalCLS = shifts.reduce((s, e) => s + e.score, 0);
     auditData = { layoutShifts: shifts, clsCulprits: culprits, totalCLS,
       images, imageIssueCount: images.filter(i => i.issues.length > 0).length,
       unusedCSS: unused, unusedCSSCount: unused.length, totalRulesScanned: totalRules, skippedSheets,
-      a11y };
+      a11y, spacing };
   }
 
   /* ── Render (Shadow DOM) ─────────────────────────────── */
@@ -351,6 +520,7 @@
     else if (tab==='typography') h += tabTypo();
     else if (tab==='assets') h += tabAssets();
     else if (tab==='audit') h += tabAudit();
+    else if (tab==='seo') h += tabSEO();
     else if (tab==='inspector') h += tabInspEmpty();
     else if (tab==='inspector-detail') h += tabInspDetail();
     h += '</div>';
@@ -408,7 +578,7 @@
 
   function tabbar() {
     const t = (id,icon,label) => `<button class="uii-tab ${(tab===id||(tab==='inspector-detail'&&id==='inspector'))?'uii-tab--on':''}" data-tab="${id}">${icon}<span class="uii-tab-lbl">${label}</span></button>`;
-    return `<div class="uii-tabbar">${t('overview',IC.grid,'Overview')}${t('colors',IC.drop,'Colors')}${t('typography',IC.type,'Type')}${t('assets',IC.image,'Assets')}${t('audit',IC.audit,'Audit')}${t('inspector',IC.target,'Inspect')}</div>`;
+    return `<div class="uii-tabbar">${t('overview',IC.grid,'Overview')}${t('colors',IC.drop,'Colors')}${t('typography',IC.type,'Type')}${t('assets',IC.image,'Assets')}${t('audit',IC.audit,'Audit')}${t('seo',IC.seo,'SEO')}${t('inspector',IC.target,'Inspect')}</div>`;
   }
 
   /* ── Overview ────────────────────────────────────────── */
@@ -634,12 +804,24 @@
     p += `Please update the HTML to fix all accessibility issues. Prioritize errors first, then warnings.`;
     return p;
   }
+  function buildSpacingPrompt(a) {
+    if (!a.spacing || !a.spacing.issues.length) return '';
+    const items = a.spacing.issues.slice(0, 60);
+    let p = `Fix the following spacing inconsistencies (values not on a ${a.spacing.grid}px grid):\n\n`;
+    items.forEach((s, i) => {
+      p += `${i+1}. ${s.prop}: ${s.value} on <${s.selector}> (${s.count} instance${s.count>1?'s':''})\n   Suggested: ${s.nearest}\n`;
+    });
+    if (a.spacing.issues.length > 60) p += `... and ${a.spacing.issues.length - 60} more.\n`;
+    p += `\nPlease update the CSS to align all spacing values to a ${a.spacing.grid}px grid for visual consistency.`;
+    return p;
+  }
   function buildFullAuditPrompt(a) {
     const parts = [];
     const cls = buildCLSPrompt(a); if (cls) parts.push(cls);
     const img = buildImagePrompt(a); if (img) parts.push(img);
     const css = buildCSSPrompt(a); if (css) parts.push(css);
     const a11y = buildA11yPrompt(a); if (a11y) parts.push(a11y);
+    const sp = buildSpacingPrompt(a); if (sp) parts.push(sp);
     if (!parts.length) return 'No issues found in the audit.';
     return `Page audit results for: ${location.href}\n\n` + parts.join('\n\n---\n\n') + `\n\nFix all the above issues to improve page performance, accessibility, and code quality.`;
   }
@@ -696,7 +878,7 @@
       return `<div class="uii-empty">${IC.audit}<p>Scan this page for performance issues, oversized images, and unused CSS.</p><button class="uii-empty-btn" data-act="run-audit">Run Audit</button></div>`;
     }
     const a = auditData;
-    const hasAnyIssue = a.clsCulprits.length || a.images.some(i => i.issues.length > 0) || a.unusedCSSCount || (a.a11y && a.a11y.issues.length);
+    const hasAnyIssue = a.clsCulprits.length || a.images.some(i => i.issues.length > 0) || a.unusedCSSCount || (a.a11y && a.a11y.issues.length) || (a.spacing && a.spacing.issues.length);
     let h = `<div class="uii-audit-bar"><span class="uii-sec-title">Audit Results</span><div style="display:flex;gap:6px">`;
     if (hasAnyIssue) h += `<button class="uii-btn-outline uii-btn-accent" data-act="copy-full-audit">Copy All to AI</button>`;
     h += `<button class="uii-btn-outline" data-act="run-audit">Re-scan</button></div></div>`;
@@ -796,6 +978,32 @@
       h += `</div></div>`;
     }
 
+    // — Spacing Consistency —
+    if (a.spacing) {
+      const sp = a.spacing;
+      h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Spacing <span class="uii-count">${sp.issues.length} off-grid</span></span>`;
+      if (sp.issues.length) h += `<button class="uii-btn-outline uii-btn-sm" data-act="copy-spacing-prompt">Copy Prompt</button>`;
+      h += `</div><div class="uii-sec-body">`;
+      if (sp.issues.length) {
+        h += `<div class="uii-audit-note" style="font-style:normal">Values not on the <strong>${sp.grid}px</strong> grid</div>`;
+        const shown = sp.issues.slice(0, 30);
+        shown.forEach(s => {
+          h += `<div class="uii-spacing-row">`;
+          h += `<div class="uii-spacing-prop">${esc(s.prop)}</div>`;
+          h += `<div class="uii-spacing-val">${esc(s.value)}</div>`;
+          h += `<div class="uii-spacing-arrow">→</div>`;
+          h += `<div class="uii-spacing-suggest">${esc(s.nearest)}</div>`;
+          h += `<div class="uii-spacing-sel">${esc(s.selector)}</div>`;
+          h += `<div class="uii-spacing-count">${s.count}x</div>`;
+          h += `</div>`;
+        });
+        if (sp.issues.length > 30) h += `<div class="uii-audit-note">...and ${sp.issues.length - 30} more. Use "Copy Prompt" for the full list.</div>`;
+      } else {
+        h += `<div class="uii-audit-pass">${IC.check} All spacing values are on the ${sp.grid}px grid</div>`;
+      }
+      h += `</div></div>`;
+    }
+
     // — Export Design Tokens —
     h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Export Design Tokens</span></div><div class="uii-sec-body">`;
     h += `<div class="uii-token-btns">`;
@@ -803,6 +1011,109 @@
     h += `<button class="uii-btn-outline" data-act="export-tokens-tailwind">Tailwind Config</button>`;
     h += `<button class="uii-btn-outline" data-act="export-tokens-json">JSON</button>`;
     h += `</div></div></div>`;
+
+    return h;
+  }
+
+  /* ── SEO Tab ─────────────────────────────────────────── */
+  function buildSEOPrompt(s) {
+    if (!s.issues.length) return 'No SEO issues found.';
+    let p = `Fix the following SEO issues on this page (score: ${s.score}/100):\nURL: ${location.href}\n\n`;
+    const groups = { error: [], warn: [], info: [] };
+    s.issues.forEach(i => (groups[i.severity] || groups.info).push(i));
+    ['error', 'warn', 'info'].forEach(sev => {
+      if (!groups[sev].length) return;
+      const label = sev === 'error' ? 'CRITICAL' : sev === 'warn' ? 'WARNINGS' : 'SUGGESTIONS';
+      p += `${label}:\n`;
+      groups[sev].forEach((i, n) => { p += `${n + 1}. [${i.type}] ${i.desc}\n   Fix: ${i.fix}\n`; });
+      p += '\n';
+    });
+    p += 'Please update the HTML <head> and page content to fix all SEO issues. Prioritize critical errors first.';
+    return p;
+  }
+
+  function tabSEO() {
+    if (!seoData) seoData = scanSEO();
+    const s = seoData;
+    const scoreBadge = s.score >= 80 ? 'uii-abadge--good' : s.score >= 50 ? 'uii-abadge--warn' : 'uii-abadge--poor';
+    const scoreLabel = s.score >= 80 ? 'Good' : s.score >= 50 ? 'Needs Work' : 'Poor';
+    const errors = s.issues.filter(i => i.severity === 'error');
+    const warns = s.issues.filter(i => i.severity === 'warn');
+    const infos = s.issues.filter(i => i.severity === 'info');
+
+    let h = `<div class="uii-audit-bar"><span class="uii-sec-title">SEO Analysis</span><div style="display:flex;gap:6px">`;
+    if (s.issues.length) h += `<button class="uii-btn-outline uii-btn-accent" data-act="copy-seo-prompt">Copy All to AI</button>`;
+    h += `<button class="uii-btn-outline" data-act="rescan-seo">Re-scan</button></div></div>`;
+
+    // Score
+    h += `<div class="uii-section"><div class="uii-sec-body" style="padding-top:16px">`;
+    h += `<div class="uii-audit-score"><span class="uii-audit-score-val">${s.score}</span><span class="uii-abadge ${scoreBadge}">${scoreLabel}</span><span class="uii-audit-score-label">SEO Score</span></div>`;
+    h += `</div></div>`;
+
+    // Meta Info
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Meta Tags</span></div><div class="uii-sec-body">`;
+    const metaRow = (label, value, status) => {
+      const badge = status === 'good' ? 'uii-abadge--good' : status === 'warn' ? 'uii-abadge--warn' : status === 'error' ? 'uii-abadge--poor' : '';
+      const statusLabel = status === 'good' ? 'OK' : status === 'warn' ? 'Warning' : status === 'error' ? 'Missing' : '';
+      return `<div class="uii-seo-meta-row"><div class="uii-seo-meta-label">${label}</div><div class="uii-seo-meta-val">${value ? esc(value).slice(0, 80) + (value.length > 80 ? '...' : '') : '<em>Not set</em>'}</div>${badge ? `<span class="uii-abadge uii-abadge--sm ${badge}">${statusLabel}</span>` : ''}</div>`;
+    };
+    const titleStatus = !s.info.title ? 'error' : (s.info.title.length < 30 || s.info.title.length > 60) ? 'warn' : 'good';
+    const descStatus = !s.info.description ? 'error' : (s.info.description.length < 70 || s.info.description.length > 160) ? 'warn' : 'good';
+    h += metaRow('Title' + (s.info.title ? ` (${s.info.title.length})` : ''), s.info.title, titleStatus);
+    h += metaRow('Description' + (s.info.description ? ` (${s.info.description.length})` : ''), s.info.description, descStatus);
+    h += metaRow('Canonical', s.info.canonical, s.info.canonical ? 'good' : 'warn');
+    h += metaRow('Viewport', s.info.viewport, s.info.viewport ? 'good' : 'error');
+    h += metaRow('Language', s.info.lang, s.info.lang ? 'good' : 'warn');
+    h += metaRow('Robots', s.info.robots || 'Not set (default: index, follow)', '');
+    h += `</div></div>`;
+
+    // Open Graph
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Social / Open Graph</span></div><div class="uii-sec-body">`;
+    h += metaRow('og:title', s.info.og.title, s.info.og.title ? 'good' : 'warn');
+    h += metaRow('og:description', s.info.og.description, s.info.og.description ? 'good' : '');
+    h += metaRow('og:image', s.info.og.image, s.info.og.image ? 'good' : 'warn');
+    h += metaRow('twitter:card', s.info.twitterCard, s.info.twitterCard ? 'good' : '');
+    h += metaRow('Structured Data', s.info.structuredData ? `${s.info.structuredData} JSON-LD block${s.info.structuredData > 1 ? 's' : ''}` : '', s.info.structuredData ? 'good' : '');
+    h += `</div></div>`;
+
+    // Heading Structure
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Heading Structure <span class="uii-count">${s.info.headings.length}</span></span></div><div class="uii-sec-body">`;
+    if (s.info.headings.length) {
+      s.info.headings.forEach(heading => {
+        const indent = (heading.level - 1) * 16;
+        h += `<div class="uii-seo-heading" style="padding-left:${indent}px"><span class="uii-seo-htag">H${heading.level}</span><span class="uii-seo-htext">${esc(heading.text) || '<em>empty</em>'}</span></div>`;
+      });
+    } else {
+      h += `<div class="uii-audit-note">No headings found on this page.</div>`;
+    }
+    h += `</div></div>`;
+
+    // Links summary
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Links</span></div><div class="uii-sec-body"><div class="uii-stats-grid">`;
+    h += `<div class="uii-stat-card"><div class="uii-stat-label">Internal</div><div class="uii-stat-val">${s.info.links.internal}</div></div>`;
+    h += `<div class="uii-stat-card"><div class="uii-stat-label">External</div><div class="uii-stat-val">${s.info.links.external}</div></div>`;
+    h += `<div class="uii-stat-card"><div class="uii-stat-label">Nofollow</div><div class="uii-stat-val">${s.info.links.nofollow}</div></div>`;
+    h += `<div class="uii-stat-card"><div class="uii-stat-label">Empty Text</div><div class="uii-stat-val">${s.info.links.broken.length}</div></div>`;
+    h += `</div></div></div>`;
+
+    // Issues
+    if (s.issues.length) {
+      h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Issues <span class="uii-count">${s.issues.length}</span></span></div><div class="uii-sec-body">`;
+      const renderSEOGroup = (label, items, tagCls) => {
+        if (!items.length) return '';
+        const groupPrompt = `Fix these SEO ${label.toLowerCase()} on ${location.href}:\n\n` + items.map((i, n) => `${n+1}. [${i.type}] ${i.desc}\n   Fix: ${i.fix}`).join('\n\n') + `\n\nPlease update the HTML to resolve all of these.`;
+        let g = `<div class="uii-a11y-group-hdr"><span class="uii-a11y-group-label">${label} (${items.length})</span><button class="uii-btn-outline uii-btn-sm uii-seo-group-copy" data-prompt="${esc(groupPrompt).replace(/"/g,'&quot;')}">Copy Prompt</button></div>`;
+        items.forEach(i => {
+          const sp = `Fix this SEO issue on ${location.href}:\n\n- Issue: ${i.desc}\n- Fix: ${i.fix}\n\nPlease update the HTML to resolve this.`;
+          g += `<div class="uii-audit-issue"><div class="uii-audit-issue-icon">${IC.warn}</div><div class="uii-audit-issue-body"><div class="uii-audit-issue-tag ${tagCls}">${esc(i.type)}</div><div class="uii-audit-issue-fix">${esc(i.desc)}</div><div class="uii-a11y-fix">${esc(i.fix)}</div></div><button class="uii-issue-copy uii-seo-issue-copy" data-prompt="${esc(sp).replace(/"/g,'&quot;')}" title="Copy prompt">${IC.copy}</button></div>`;
+        });
+        return g;
+      };
+      h += renderSEOGroup('Errors', errors, 'uii-atag--error');
+      h += renderSEOGroup('Warnings', warns, 'uii-atag--cls');
+      h += renderSEOGroup('Suggestions', infos, 'uii-atag--a11y-info');
+      h += `</div></div>`;
+    }
 
     return h;
   }
@@ -931,6 +1242,7 @@
     clearDims(); stopPick();
     document.querySelectorAll('.uii-cls-highlight').forEach(e=>e.remove());
     auditData = null;
+    seoData = null;
   }
 
   /* ── Events ──────────────────────────────────────────── */
@@ -984,6 +1296,12 @@
     root.querySelectorAll('[data-act="copy-a11y-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildA11yPrompt(auditData)); }));
     root.querySelectorAll('[data-act="copy-a11y-issue"]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
     root.querySelectorAll('[data-act="copy-a11y-group"]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
+    root.querySelectorAll('[data-act="copy-spacing-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildSpacingPrompt(auditData)); }));
+    // SEO tab events
+    root.querySelectorAll('[data-act="copy-seo-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(seoData) cp(buildSEOPrompt(seoData)); }));
+    root.querySelectorAll('[data-act="rescan-seo"]').forEach(b=>b.addEventListener('click',()=>{ seoData = null; render(); }));
+    root.querySelectorAll('.uii-seo-group-copy').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
+    root.querySelectorAll('.uii-seo-issue-copy').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
     root.querySelectorAll('[data-act="export-tokens-css"]').forEach(b=>b.addEventListener('click',()=>{ cp(exportTokensCSS()); }));
     root.querySelectorAll('[data-act="export-tokens-tailwind"]').forEach(b=>b.addEventListener('click',()=>{ cp(exportTokensTailwind()); }));
     root.querySelectorAll('[data-act="export-tokens-json"]').forEach(b=>b.addEventListener('click',()=>{ cp(exportTokensJSON()); }));
