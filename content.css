@@ -105,6 +105,9 @@ img { display: block; }
   cursor: pointer; font-family: inherit; transition: all .12s;
 }
 .uii-btn-outline:hover { background: rgba(0,0,0,.03); border-color: #bbb; }
+.uii-btn-outline.uii-btn-sm { font-size: 10.5px; padding: 4px 10px; }
+.uii-btn-outline.uii-btn-accent { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+.uii-btn-outline.uii-btn-accent:hover { background: #6d28d9; border-color: #6d28d9; }
 
 /* ── Overview: Page Info ───────────────────────────────── */
 .uii-page-info { padding: 20px 18px; border-bottom: 1px solid #e8e8ee; }
@@ -274,6 +277,87 @@ img { display: block; }
 }
 .uii-al-dl:hover { background: rgba(0,0,0,.04); color: #666; }
 .uii-al-dl svg { width: 16px; height: 16px; fill: currentColor; }
+
+/* ── Audit Tab ─────────────────────────────────────────── */
+.uii-audit-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px 12px;
+}
+.uii-audit-score {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 14px; background: #f8f8fc; border-radius: 10px; margin-bottom: 12px;
+}
+.uii-audit-score-val { font-size: 26px; font-weight: 800; color: #1a1a2e; font-family: 'SF Mono','Fira Code',monospace; }
+.uii-audit-score-label { font-size: 11px; color: #a0a0b4; width: 100%; }
+.uii-abadge {
+  font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px;
+}
+.uii-abadge--good { background: rgba(34,197,94,.12); color: #16a34a; }
+.uii-abadge--warn { background: rgba(234,179,8,.15); color: #a16207; }
+.uii-abadge--poor { background: rgba(239,68,68,.10); color: #dc2626; }
+
+.uii-audit-issue {
+  display: flex; gap: 10px; padding: 10px 0;
+  border-bottom: 1px solid #f0f0f5;
+}
+.uii-audit-issue:last-child { border-bottom: none; }
+.uii-audit-issue-icon { width: 20px; height: 20px; flex-shrink: 0; fill: #a0a0b4; margin-top: 2px; }
+.uii-audit-issue-icon svg { width: 18px; height: 18px; fill: currentColor; }
+.uii-audit-issue-body { flex: 1; min-width: 0; }
+.uii-audit-issue-tag {
+  display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 4px; margin-bottom: 4px; letter-spacing: .3px;
+}
+.uii-atag--cls { background: rgba(239,68,68,.10); color: #dc2626; }
+.uii-audit-issue-fix { font-size: 12px; color: #555; line-height: 1.45; word-break: break-word; }
+
+.uii-audit-pass {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: #16a34a; font-weight: 500; padding: 8px 0;
+}
+.uii-audit-pass svg { width: 18px; height: 18px; fill: #16a34a; }
+
+/* Audit: Image rows */
+.uii-audit-img-row {
+  display: flex; gap: 10px; padding: 10px 0; cursor: pointer;
+  border-bottom: 1px solid #f0f0f5; transition: background .1s;
+}
+.uii-audit-img-row:hover { background: rgba(0,0,0,.02); }
+.uii-audit-img-row:last-child { border-bottom: none; }
+.uii-audit-img-thumb {
+  width: 48px; height: 48px; border-radius: 6px; overflow: hidden;
+  background: #f0f0f5; flex-shrink: 0;
+}
+.uii-audit-img-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.uii-audit-img-info { flex: 1; min-width: 0; }
+.uii-audit-img-name { font-size: 12.5px; font-weight: 600; color: #333346; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uii-audit-img-size { font-size: 11px; color: #888; margin-top: 2px; }
+.uii-audit-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.uii-atag {
+  font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
+}
+.uii-atag--warn { background: rgba(234,179,8,.15); color: #a16207; }
+.uii-atag--info { background: rgba(59,130,246,.10); color: #2563eb; }
+
+/* Audit: Unused CSS */
+.uii-rule-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 0;
+  border-bottom: 1px solid #f0f0f5;
+}
+.uii-rule-row:last-child { border-bottom: none; }
+.uii-rule-sel {
+  flex: 1; font-size: 12px; font-family: 'SF Mono','Fira Code',monospace;
+  color: #333346; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.uii-rule-sheet { font-size: 10px; color: #a0a0b4; flex-shrink: 0; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uii-rule-copy {
+  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  border: none; background: none; color: #bbb; cursor: pointer; border-radius: 4px; flex-shrink: 0;
+}
+.uii-rule-copy:hover { background: rgba(0,0,0,.05); color: #666; }
+.uii-rule-copy svg { width: 14px; height: 14px; fill: currentColor; }
+
+.uii-audit-note { font-size: 11px; color: #a0a0b4; padding: 6px 0; font-style: italic; }
 
 /* ── Inspector Tab ─────────────────────────────────────── */
 .uii-insp-bar {

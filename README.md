@@ -4,7 +4,7 @@ A Chrome extension that extracts and inspects design tokens from any webpage —
 
 ## Features
 
-### 5-Tab Panel
+### 6-Tab Panel
 
 | Tab | What it does |
 |-----|-------------|
@@ -12,6 +12,7 @@ A Chrome extension that extracts and inspects design tokens from any webpage —
 | **Colors** | All colors with instance counts, including alpha/opacity values. **Palette** view (sorted by usage) or **Categories** view (grouped by text/background/border). Live color picker with alpha slider to swap colors on the page in real time. Reset individual or all changes. |
 | **Typography** | Font style cards with live "AaBbCcDdEeFf" preview rendered in the actual font, size, and weight. Instance counts per style. |
 | **Assets** | All images and SVGs on the page. Grid or list view. File sizes. Download any asset. |
+| **Audit** | One-click performance audit: Layout Shift detection, Image Audit (oversized/lazy/alt/WebP), Unused CSS scanner. Each section has a **Copy Prompt** button for AI-assisted fixes. |
 | **Inspector** | Click any element to see: selector with syntax highlighting, box model diagram, text properties, colors with swatches, layout (flex/grid details), decoration, and contrast ratio with AA compliance badge. |
 
 ### Element Picker
@@ -37,6 +38,16 @@ A Chrome extension that extracts and inspects design tokens from any webpage —
 - "Reset" reverts individual colors; "Reset All" reverts everything
 - Closing the panel automatically reverts all changes
 - Export all colors (or swapped colors) as JSON
+
+### Performance Audit
+
+On-demand audit with three sections:
+
+- **Layout Shift Highlighter** — detects elements causing CLS (Cumulative Layout Shift). Shows a CLS score with Good/Needs Work/Poor badge. Flags images missing `width`/`height` attributes and `@font-face` rules without `font-display: swap`. "Highlight" button overlays culprit elements on the page.
+- **Image Audit** — flags oversized images (natural vs rendered size with % wasted), missing `loading="lazy"` on below-fold images, missing `alt` attributes, and images that should be converted to WebP/AVIF. Click any row to scroll to the image on the page.
+- **Unused CSS Detector** — scans all accessible stylesheets and finds CSS rules that don't match any element on the page. Shows count of unused vs total rules. Copy individual rules or all at once. Cross-origin sheets are gracefully skipped.
+
+Each section includes a **Copy Prompt** button that generates an AI-ready prompt describing the issues with specific fix instructions. The **"Copy All to AI"** button at the top combines all sections into a single prompt you can paste into Claude, ChatGPT, or any AI tool to fix your codebase.
 
 ### UI
 
@@ -76,6 +87,8 @@ ui-inspector-extension/
 - `document.elementsFromPoint()` for accurate deep element targeting
 - `getComputedStyle()` for all property extraction
 - WCAG relative luminance formula for contrast ratios
+- `PerformanceObserver` with `layout-shift` entries for CLS detection
+- `document.styleSheets` + `cssRules` iteration for unused CSS detection
 
 ## Permissions
 

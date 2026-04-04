@@ -7,6 +7,7 @@
   let cssText = null; // Cached CSS text
   let panelPos = { x: null, y: null }; // Saved drag position
   const colorSwaps = new Map(); // oldHex → { newHex, originals: [{el, prop, orig}] }
+  let auditData = null; // Cached audit results
 
   /* ── Icons ──────────────────────────────────────────── */
   const IC = {
@@ -22,6 +23,9 @@
     listv:'<svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>',
     gridv:'<svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zm0 10h8v8H3zm10-10h8v8h-8zm0 10h8v8h-8z"/></svg>',
     menu:'<svg viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>',
+    audit:'<svg viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51L12.96 17.55C12.96 17.55 11 21 11 21z"/></svg>',
+    warn:'<svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>',
+    check:'<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>',
   };
 
   /* ── Util ────────────────────────────────────────────── */
@@ -105,6 +109,111 @@
     return '#'+[r,g,b].map(x=>Math.round(x*255).toString(16).padStart(2,'0')).join('');
   }
 
+  /* ── Audit: Layout Shifts ────────────────────────────── */
+  function scanLayoutShifts() {
+    return new Promise(resolve => {
+      const shifts = [];
+      try {
+        const obs = new PerformanceObserver(list => {
+          for (const entry of list.getEntries()) {
+            if (!entry.hadRecentInput) {
+              const sources = (entry.sources || []).map(s => s.node).filter(Boolean);
+              shifts.push({ score: entry.value, elements: sources });
+            }
+          }
+        });
+        obs.observe({ type: 'layout-shift', buffered: true });
+        setTimeout(() => { obs.disconnect(); resolve(shifts); }, 500);
+      } catch(e) { resolve(shifts); }
+    });
+  }
+
+  function scanCLSCulprits() {
+    const culprits = [];
+    document.querySelectorAll('img').forEach(img => {
+      if (own(img)) return;
+      if ((!img.hasAttribute('width') || !img.hasAttribute('height')) && img.naturalWidth > 0) {
+        culprits.push({ el: img, type: 'img', issue: 'missing-dimensions',
+          fix: `Add width="${img.naturalWidth}" height="${img.naturalHeight}" to <img src="${(img.src||'').split('/').pop().split('?')[0]}">` });
+      }
+    });
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) {
+          if (rule instanceof CSSFontFaceRule) {
+            if (!rule.style.fontDisplay || rule.style.fontDisplay === 'auto') {
+              culprits.push({ el: null, type: 'font', issue: 'font-display',
+                fix: `Add font-display: swap to @font-face for "${rule.style.fontFamily.replace(/['"]/g,'')}"` });
+            }
+          }
+        }
+      } catch(e) { /* cross-origin */ }
+    }
+    return culprits;
+  }
+
+  /* ── Audit: Image Audit ─────────────────────────────── */
+  function scanImages() {
+    const results = [];
+    const viewH = window.innerHeight;
+    document.querySelectorAll('img').forEach(img => {
+      if (own(img) || !img.src) return;
+      const rect = img.getBoundingClientRect();
+      const nw = img.naturalWidth, nh = img.naturalHeight;
+      const rw = Math.round(rect.width), rh = Math.round(rect.height);
+      const oversized = nw > rw * 1.5 && rw > 0;
+      const savingsPercent = oversized ? Math.round((1 - (rw * rh) / (nw * nh)) * 100) : 0;
+      const ext = (img.src.split('.').pop().split('?')[0] || '').toLowerCase();
+      const suggestWebP = ['png','jpg','jpeg','bmp','gif'].includes(ext);
+      const belowFold = rect.top > viewH;
+      const missingLazy = belowFold && img.loading !== 'lazy';
+      const issues = [];
+      if (oversized) issues.push('oversized');
+      if (missingLazy) issues.push('no-lazy');
+      if (!img.hasAttribute('alt')) issues.push('no-alt');
+      if (suggestWebP) issues.push('use-webp');
+      results.push({ el: img, src: img.src, name: (img.src.split('/').pop().split('?')[0] || 'image').slice(0,40),
+        naturalW: nw, naturalH: nh, renderedW: rw, renderedH: rh,
+        oversized, savingsPercent, missingLazy, missingAlt: !img.hasAttribute('alt'),
+        format: ext, suggestWebP, issues });
+    });
+    return results;
+  }
+
+  /* ── Audit: Unused CSS ──────────────────────────────── */
+  function scanUnusedCSS() {
+    const unused = [];
+    let totalRules = 0, skippedSheets = 0;
+    for (const sheet of document.styleSheets) {
+      let rules;
+      try { rules = sheet.cssRules; } catch(e) { skippedSheets++; continue; }
+      const sheetName = sheet.href ? sheet.href.split('/').pop().split('?')[0] : 'inline';
+      for (const rule of rules) {
+        if (!(rule instanceof CSSStyleRule)) continue;
+        totalRules++;
+        try {
+          const matched = document.querySelector(rule.selectorText);
+          if (!matched) {
+            unused.push({ sheet: sheetName, selector: rule.selectorText, ruleText: rule.cssText });
+          }
+        } catch(e) { /* invalid selector */ }
+      }
+    }
+    return { unused, totalRules, skippedSheets };
+  }
+
+  /* ── Run full audit ─────────────────────────────────── */
+  async function runAudit() {
+    const shifts = await scanLayoutShifts();
+    const culprits = scanCLSCulprits();
+    const images = scanImages();
+    const { unused, totalRules, skippedSheets } = scanUnusedCSS();
+    const totalCLS = shifts.reduce((s, e) => s + e.score, 0);
+    auditData = { layoutShifts: shifts, clsCulprits: culprits, totalCLS,
+      images, imageIssueCount: images.filter(i => i.issues.length > 0).length,
+      unusedCSS: unused, unusedCSSCount: unused.length, totalRulesScanned: totalRules, skippedSheets };
+  }
+
   /* ── Render (Shadow DOM) ─────────────────────────────── */
   function loadCSS() {
     if (cssText) return Promise.resolve(cssText);
@@ -136,6 +245,7 @@
     else if (tab==='colors') h += tabColors();
     else if (tab==='typography') h += tabTypo();
     else if (tab==='assets') h += tabAssets();
+    else if (tab==='audit') h += tabAudit();
     else if (tab==='inspector') h += tabInspEmpty();
     else if (tab==='inspector-detail') h += tabInspDetail();
     h += '</div>';
@@ -193,7 +303,7 @@
 
   function tabbar() {
     const t = (id,icon,label) => `<button class="uii-tab ${(tab===id||(tab==='inspector-detail'&&id==='inspector'))?'uii-tab--on':''}" data-tab="${id}">${icon}<span class="uii-tab-lbl">${label}</span></button>`;
-    return `<div class="uii-tabbar">${t('overview',IC.grid,'Overview')}${t('colors',IC.drop,'Colors')}${t('typography',IC.type,'Type')}${t('assets',IC.image,'Assets')}${t('inspector',IC.target,'Inspect')}</div>`;
+    return `<div class="uii-tabbar">${t('overview',IC.grid,'Overview')}${t('colors',IC.drop,'Colors')}${t('typography',IC.type,'Type')}${t('assets',IC.image,'Assets')}${t('audit',IC.audit,'Audit')}${t('inspector',IC.target,'Inspect')}</div>`;
   }
 
   /* ── Overview ────────────────────────────────────────── */
@@ -377,6 +487,122 @@
     return h;
   }
 
+  /* ── Audit Tab ───────────────────────────────────────── */
+  /* ── Audit prompt builders ────────────────────────────── */
+  function buildCLSPrompt(a) {
+    if (!a.clsCulprits.length) return '';
+    let p = `Fix the following Layout Shift (CLS) issues on this page (current CLS score: ${a.totalCLS.toFixed(3)}):\n\n`;
+    a.clsCulprits.forEach((c, i) => { p += `${i+1}. [${c.issue}] ${c.fix}\n`; });
+    p += `\nPlease update the HTML/CSS to eliminate layout shifts. Add explicit dimensions to images and use font-display: swap for web fonts.`;
+    return p;
+  }
+  function buildImagePrompt(a) {
+    const issues = a.images.filter(i => i.issues.length > 0);
+    if (!issues.length) return '';
+    let p = `Fix the following image performance issues on this page:\n\n`;
+    issues.forEach((img, i) => {
+      p += `${i+1}. ${img.name} (${img.format.toUpperCase()})\n`;
+      if (img.oversized) p += `   - Oversized: natural ${img.naturalW}x${img.naturalH}, rendered at ${img.renderedW}x${img.renderedH} (~${img.savingsPercent}% pixels wasted). Resize the source image or use responsive srcset.\n`;
+      if (img.missingLazy) p += `   - Missing lazy loading: this image is below the fold. Add loading="lazy".\n`;
+      if (img.missingAlt) p += `   - Missing alt attribute: add descriptive alt text for accessibility.\n`;
+      if (img.suggestWebP) p += `   - Format: convert from ${img.format.toUpperCase()} to WebP/AVIF for smaller file size.\n`;
+    });
+    p += `\nPlease update the codebase to fix these image issues for better performance and accessibility.`;
+    return p;
+  }
+  function buildCSSPrompt(a) {
+    if (!a.unusedCSSCount) return '';
+    let p = `Remove the following ${a.unusedCSSCount} unused CSS rules to reduce stylesheet size (out of ${a.totalRulesScanned} total rules scanned):\n\n`;
+    a.unusedCSS.slice(0, 80).forEach(r => { p += `- [${r.sheet}] ${r.selector}\n`; });
+    if (a.unusedCSSCount > 80) p += `... and ${a.unusedCSSCount - 80} more unused rules.\n`;
+    p += `\nPlease remove or clean up these selectors from the stylesheets. Verify each before removing in case they are used dynamically.`;
+    return p;
+  }
+  function buildFullAuditPrompt(a) {
+    const parts = [];
+    const cls = buildCLSPrompt(a); if (cls) parts.push(cls);
+    const img = buildImagePrompt(a); if (img) parts.push(img);
+    const css = buildCSSPrompt(a); if (css) parts.push(css);
+    if (!parts.length) return 'No issues found in the audit.';
+    return `Page audit results for: ${location.href}\n\n` + parts.join('\n\n---\n\n') + `\n\nFix all the above issues to improve page performance, accessibility, and code quality.`;
+  }
+
+  function tabAudit() {
+    if (!auditData) {
+      return `<div class="uii-empty">${IC.audit}<p>Scan this page for performance issues, oversized images, and unused CSS.</p><button class="uii-empty-btn" data-act="run-audit">Run Audit</button></div>`;
+    }
+    const a = auditData;
+    const hasAnyIssue = a.clsCulprits.length || a.images.some(i => i.issues.length > 0) || a.unusedCSSCount;
+    let h = `<div class="uii-audit-bar"><span class="uii-sec-title">Audit Results</span><div style="display:flex;gap:6px">`;
+    if (hasAnyIssue) h += `<button class="uii-btn-outline uii-btn-accent" data-act="copy-full-audit">Copy All to AI</button>`;
+    h += `<button class="uii-btn-outline" data-act="run-audit">Re-scan</button></div></div>`;
+
+    // — Layout Shifts —
+    const clsVal = a.totalCLS;
+    const clsBadge = clsVal < 0.1 ? 'uii-abadge--good' : clsVal < 0.25 ? 'uii-abadge--warn' : 'uii-abadge--poor';
+    const clsLabel = clsVal < 0.1 ? 'Good' : clsVal < 0.25 ? 'Needs Work' : 'Poor';
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Layout Shifts <span class="uii-count">${a.clsCulprits.length}</span></span><div style="display:flex;gap:6px">`;
+    if (a.clsCulprits.length) h += `<button class="uii-btn-outline uii-btn-sm" data-act="copy-cls-prompt">Copy Prompt</button>`;
+    if (a.clsCulprits.length) h += `<button class="uii-btn-outline uii-btn-sm" data-act="highlight-cls">Highlight</button>`;
+    h += `</div></div><div class="uii-sec-body">`;
+    h += `<div class="uii-audit-score"><span class="uii-audit-score-val">${clsVal.toFixed(3)}</span><span class="uii-abadge ${clsBadge}">${clsLabel}</span><span class="uii-audit-score-label">Cumulative Layout Shift</span></div>`;
+    if (a.clsCulprits.length) {
+      a.clsCulprits.forEach(c => {
+        const icon = c.type === 'img' ? IC.image : IC.type;
+        h += `<div class="uii-audit-issue"><div class="uii-audit-issue-icon">${icon}</div><div class="uii-audit-issue-body"><div class="uii-audit-issue-tag uii-atag--cls">${c.issue === 'missing-dimensions' ? 'Missing Dimensions' : 'No font-display'}</div><div class="uii-audit-issue-fix">${esc(c.fix)}</div></div></div>`;
+      });
+    } else {
+      h += `<div class="uii-audit-pass">${IC.check} No layout shift culprits found</div>`;
+    }
+    h += `</div></div>`;
+
+    // — Image Audit —
+    const imgIssues = a.images.filter(i => i.issues.length > 0);
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Image Audit <span class="uii-count">${imgIssues.length} issue${imgIssues.length!==1?'s':''}</span></span>`;
+    if (imgIssues.length) h += `<button class="uii-btn-outline uii-btn-sm" data-act="copy-img-prompt">Copy Prompt</button>`;
+    h += `</div><div class="uii-sec-body">`;
+    if (imgIssues.length) {
+      imgIssues.forEach(img => {
+        const idx = a.images.indexOf(img);
+        h += `<div class="uii-audit-img-row" data-act="goto-img" data-idx="${idx}">`;
+        h += `<div class="uii-audit-img-thumb"><img src="${esc(img.src)}" loading="lazy"></div>`;
+        h += `<div class="uii-audit-img-info">`;
+        h += `<div class="uii-audit-img-name">${esc(img.name)}</div>`;
+        if (img.oversized) {
+          h += `<div class="uii-audit-img-size">${img.naturalW}x${img.naturalH} rendered at ${img.renderedW}x${img.renderedH} <strong>(~${img.savingsPercent}% wasted)</strong></div>`;
+        }
+        h += `<div class="uii-audit-tags">`;
+        if (img.oversized) h += `<span class="uii-atag uii-atag--warn">Oversized</span>`;
+        if (img.missingLazy) h += `<span class="uii-atag uii-atag--warn">No lazy</span>`;
+        if (img.missingAlt) h += `<span class="uii-atag uii-atag--info">No alt</span>`;
+        if (img.suggestWebP) h += `<span class="uii-atag uii-atag--info">Use WebP</span>`;
+        h += `</div></div></div>`;
+      });
+    } else {
+      h += `<div class="uii-audit-pass">${IC.check} All images look good</div>`;
+    }
+    h += `</div></div>`;
+
+    // — Unused CSS —
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Unused CSS <span class="uii-count">${a.unusedCSSCount} / ${a.totalRulesScanned}</span></span><div style="display:flex;gap:6px">`;
+    if (a.unusedCSSCount) h += `<button class="uii-btn-outline uii-btn-sm" data-act="copy-css-prompt">Copy Prompt</button>`;
+    if (a.unusedCSSCount) h += `<button class="uii-btn-outline uii-btn-sm" data-act="copy-unused-css">Copy All</button>`;
+    h += `</div></div><div class="uii-sec-body">`;
+    if (a.skippedSheets) h += `<div class="uii-audit-note">${a.skippedSheets} cross-origin sheet${a.skippedSheets>1?'s':''} skipped</div>`;
+    if (a.unusedCSSCount) {
+      const shown = a.unusedCSS.slice(0, 50);
+      shown.forEach(r => {
+        h += `<div class="uii-rule-row"><div class="uii-rule-sel">${esc(r.selector)}</div><div class="uii-rule-sheet">${esc(r.sheet)}</div><button class="uii-rule-copy" data-act="copy-rule" data-rule="${esc(r.ruleText).replace(/"/g,'&quot;')}">${IC.copy}</button></div>`;
+      });
+      if (a.unusedCSSCount > 50) h += `<div class="uii-audit-note">...and ${a.unusedCSSCount - 50} more. Use "Copy All" to get the full list.</div>`;
+    } else {
+      h += `<div class="uii-audit-pass">${IC.check} No unused CSS rules found</div>`;
+    }
+    h += `</div></div>`;
+
+    return h;
+  }
+
   /* ── Inspector Empty ─────────────────────────────────── */
   function tabInspEmpty() {
     return `<div class="uii-empty">${IC.target}<p>Click an element on the page to inspect its properties.</p><button class="uii-empty-btn" data-act="pick">Start Picking</button></div>`;
@@ -499,6 +725,8 @@
     shadow = null;
     revertAllColors();
     clearDims(); stopPick();
+    document.querySelectorAll('.uii-cls-highlight').forEach(e=>e.remove());
+    auditData = null;
   }
 
   /* ── Events ──────────────────────────────────────────── */
@@ -534,6 +762,24 @@
     root.querySelectorAll('[data-reset]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); revertColor(b.dataset.reset); render(); }));
     root.querySelectorAll('[data-act="reset-colors"]').forEach(b=>b.addEventListener('click',()=>{ revertAllColors(); render(); }));
     root.querySelectorAll('.uii-copy-prompt-btn').forEach(b=>b.addEventListener('click',()=>{ cp(b.dataset.prompt); }));
+    // Audit tab events
+    root.querySelectorAll('[data-act="run-audit"]').forEach(b=>b.addEventListener('click',async()=>{ b.textContent='Scanning...'; b.disabled=true; await runAudit(); render(); }));
+    root.querySelectorAll('[data-act="highlight-cls"]').forEach(b=>b.addEventListener('click',()=>{
+      document.querySelectorAll('.uii-cls-highlight').forEach(e=>e.remove());
+      if(!auditData) return;
+      auditData.clsCulprits.forEach(c=>{ if(!c.el) return; const r=c.el.getBoundingClientRect(); const d=document.createElement('div'); d.className='uii-cls-highlight'; d.style.cssText=`position:absolute;top:${r.top+window.scrollY}px;left:${r.left+window.scrollX}px;width:${r.width}px;height:${r.height}px;border:2px dashed #dc2626;background:rgba(239,68,68,.08);z-index:2147483645;pointer-events:none;border-radius:3px;`; document.body.appendChild(d); });
+    }));
+    root.querySelectorAll('[data-act="copy-unused-css"]').forEach(b=>b.addEventListener('click',()=>{
+      if(!auditData) return; cp(auditData.unusedCSS.map(r=>`/* ${r.sheet} */\n${r.ruleText}`).join('\n\n'));
+    }));
+    root.querySelectorAll('[data-act="copy-rule"]').forEach(b=>b.addEventListener('click',()=>{ cp(b.dataset.rule); }));
+    root.querySelectorAll('[data-act="copy-full-audit"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildFullAuditPrompt(auditData)); }));
+    root.querySelectorAll('[data-act="copy-cls-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildCLSPrompt(auditData)); }));
+    root.querySelectorAll('[data-act="copy-img-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildImagePrompt(auditData)); }));
+    root.querySelectorAll('[data-act="copy-css-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildCSSPrompt(auditData)); }));
+    root.querySelectorAll('[data-act="goto-img"]').forEach(b=>b.addEventListener('click',()=>{
+      const idx=parseInt(b.dataset.idx); const img=auditData?.images[idx]?.el; if(img) img.scrollIntoView({behavior:'smooth',block:'center'});
+    }));
     root.querySelectorAll('[data-cview]').forEach(b=>b.addEventListener('click',()=>{ colorView=b.dataset.cview; render(); }));
     root.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{assetView=b.dataset.view;render();}));
     root.querySelectorAll('[data-dl]').forEach(b=>b.addEventListener('click',e=>{
