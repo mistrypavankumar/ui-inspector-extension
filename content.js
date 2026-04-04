@@ -347,6 +347,8 @@
   function scanSEO() {
     const issues = [];
     const info = {};
+    const getMeta = (attr, val) => document.querySelector(`meta[${attr}="${val}"]`) || document.querySelector(`meta[${attr}="${val[0].toUpperCase()+val.slice(1)}"]`) || [...document.querySelectorAll(`meta[${attr}]`)].find(m => (m.getAttribute(attr)||'').toLowerCase() === val.toLowerCase()) || null;
+    const metaContent = (attr, val) => { const el = getMeta(attr, val); return el ? (el.getAttribute('content') || '') : ''; };
 
     // Title
     const title = document.title || '';
@@ -360,14 +362,14 @@
     }
 
     // Meta description
-    const metaDesc = document.querySelector('meta[name="description"]');
-    info.description = metaDesc ? metaDesc.content : '';
-    if (!metaDesc || !metaDesc.content) {
+    const descContent = metaContent('name', 'description');
+    info.description = descContent;
+    if (!descContent) {
       issues.push({ type: 'missing-description', severity: 'error', desc: 'Missing meta description', fix: 'Add <meta name="description" content="..."> with 150-160 characters describing the page.' });
-    } else if (metaDesc.content.length < 70) {
-      issues.push({ type: 'short-description', severity: 'warn', desc: `Meta description is too short (${metaDesc.content.length} chars)`, fix: 'Meta description should be 150-160 characters for optimal search result display.' });
-    } else if (metaDesc.content.length > 160) {
-      issues.push({ type: 'long-description', severity: 'warn', desc: `Meta description is too long (${metaDesc.content.length} chars)`, fix: 'Meta description should be under 160 characters to avoid truncation in search results.' });
+    } else if (descContent.length < 70) {
+      issues.push({ type: 'short-description', severity: 'warn', desc: `Meta description is too short (${descContent.length} chars)`, fix: 'Meta description should be 150-160 characters for optimal search result display.' });
+    } else if (descContent.length > 160) {
+      issues.push({ type: 'long-description', severity: 'warn', desc: `Meta description is too long (${descContent.length} chars)`, fix: 'Meta description should be under 160 characters to avoid truncation in search results.' });
     }
 
     // Canonical URL
@@ -378,19 +380,19 @@
     }
 
     // Open Graph tags
-    const ogTitle = document.querySelector('meta[property="og:title"]');
-    const ogDesc = document.querySelector('meta[property="og:description"]');
-    const ogImage = document.querySelector('meta[property="og:image"]');
-    const ogUrl = document.querySelector('meta[property="og:url"]');
-    info.og = { title: ogTitle?.content || '', description: ogDesc?.content || '', image: ogImage?.content || '', url: ogUrl?.content || '' };
-    if (!ogTitle) issues.push({ type: 'missing-og:title', severity: 'warn', desc: 'Missing og:title meta tag', fix: 'Add <meta property="og:title" content="..."> for social media sharing.' });
-    if (!ogDesc) issues.push({ type: 'missing-og:description', severity: 'info', desc: 'Missing og:description meta tag', fix: 'Add <meta property="og:description" content="..."> for social media sharing.' });
-    if (!ogImage) issues.push({ type: 'missing-og:image', severity: 'warn', desc: 'Missing og:image meta tag', fix: 'Add <meta property="og:image" content="..."> with a 1200x630px image for social media sharing.' });
+    const ogTitleVal = metaContent('property', 'og:title');
+    const ogDescVal = metaContent('property', 'og:description');
+    const ogImageVal = metaContent('property', 'og:image');
+    const ogUrlVal = metaContent('property', 'og:url');
+    info.og = { title: ogTitleVal, description: ogDescVal, image: ogImageVal, url: ogUrlVal };
+    if (!ogTitleVal) issues.push({ type: 'missing-og:title', severity: 'warn', desc: 'Missing og:title meta tag', fix: 'Add <meta property="og:title" content="..."> for social media sharing.' });
+    if (!ogDescVal) issues.push({ type: 'missing-og:description', severity: 'info', desc: 'Missing og:description meta tag', fix: 'Add <meta property="og:description" content="..."> for social media sharing.' });
+    if (!ogImageVal) issues.push({ type: 'missing-og:image', severity: 'warn', desc: 'Missing og:image meta tag', fix: 'Add <meta property="og:image" content="..."> with a 1200x630px image for social media sharing.' });
 
     // Twitter Card
-    const twCard = document.querySelector('meta[name="twitter:card"]');
-    info.twitterCard = twCard?.content || '';
-    if (!twCard) issues.push({ type: 'missing-twitter:card', severity: 'info', desc: 'Missing twitter:card meta tag', fix: 'Add <meta name="twitter:card" content="summary_large_image"> for Twitter sharing.' });
+    const twCardVal = metaContent('name', 'twitter:card');
+    info.twitterCard = twCardVal;
+    if (!twCardVal) issues.push({ type: 'missing-twitter:card', severity: 'info', desc: 'Missing twitter:card meta tag', fix: 'Add <meta name="twitter:card" content="summary_large_image"> for Twitter sharing.' });
 
     // Heading structure
     const headings = [];
@@ -417,16 +419,16 @@
     }
 
     // Robots meta
-    const robots = document.querySelector('meta[name="robots"]');
-    info.robots = robots?.content || '';
-    if (robots && (robots.content.includes('noindex') || robots.content.includes('nofollow'))) {
-      issues.push({ type: 'robots-restricted', severity: 'info', desc: `Robots meta: "${robots.content}"`, fix: 'This page has crawling restrictions. Ensure this is intentional.' });
+    const robotsVal = metaContent('name', 'robots');
+    info.robots = robotsVal;
+    if (robotsVal && (robotsVal.includes('noindex') || robotsVal.includes('nofollow'))) {
+      issues.push({ type: 'robots-restricted', severity: 'info', desc: `Robots meta: "${robotsVal}"`, fix: 'This page has crawling restrictions. Ensure this is intentional.' });
     }
 
     // Viewport meta
-    const viewport = document.querySelector('meta[name="viewport"]');
-    info.viewport = viewport?.content || '';
-    if (!viewport) {
+    const viewportVal = metaContent('name', 'viewport');
+    info.viewport = viewportVal;
+    if (!viewportVal) {
       issues.push({ type: 'missing-viewport', severity: 'error', desc: 'Missing viewport meta tag', fix: 'Add <meta name="viewport" content="width=device-width, initial-scale=1"> for mobile responsiveness.' });
     }
 
@@ -873,7 +875,31 @@
     return JSON.stringify({ source: location.href, extractedAt: new Date().toISOString(), tokens: t }, null, 2);
   }
 
+  function auditSkeleton() {
+    const bar = (w) => `<div class="uii-skeleton" style="width:${w};height:14px"></div>`;
+    const barL = (w) => `<div class="uii-skeleton" style="width:${w};height:20px"></div>`;
+    let h = `<div class="uii-audit-bar"><span class="uii-sec-title">Audit Results</span><button class="uii-btn-outline" disabled>Scanning...</button></div>`;
+    // Layout Shifts skeleton
+    h += `<div class="uii-section"><div class="uii-sec-hdr">${bar('120px')}${bar('70px')}</div><div class="uii-sec-body"><div class="uii-audit-score">${barL('90px')}${bar('60px')}<div style="width:100%;margin-top:4px">${bar('160px')}</div></div>`;
+    for (let i = 0; i < 2; i++) h += `<div style="display:flex;gap:10px;padding:10px 0"><div class="uii-skeleton" style="width:20px;height:20px;border-radius:50%"></div><div style="flex:1">${bar('80px')}<div style="margin-top:6px">${bar(`${180 + i * 20}px`)}</div></div></div>`;
+    h += `</div></div>`;
+    // Image Audit skeleton
+    h += `<div class="uii-section"><div class="uii-sec-hdr">${bar('100px')}${bar('50px')}</div><div class="uii-sec-body">`;
+    for (let i = 0; i < 3; i++) h += `<div style="display:flex;gap:10px;padding:10px 0"><div class="uii-skeleton" style="width:48px;height:48px;border-radius:6px"></div><div style="flex:1">${bar('140px')}<div style="margin-top:4px">${bar('200px')}</div><div style="display:flex;gap:4px;margin-top:6px">${bar('55px')}${bar('55px')}</div></div></div>`;
+    h += `</div></div>`;
+    // Unused CSS skeleton
+    h += `<div class="uii-section"><div class="uii-sec-hdr">${bar('110px')}${bar('60px')}</div><div class="uii-sec-body">`;
+    for (let i = 0; i < 4; i++) h += `<div style="display:flex;gap:8px;padding:7px 0">${bar(`${100 + i * 15}px`)}${bar('50px')}</div>`;
+    h += `</div></div>`;
+    // Accessibility skeleton
+    h += `<div class="uii-section"><div class="uii-sec-hdr">${bar('110px')}${bar('30px')}</div><div class="uii-sec-body"><div class="uii-audit-score">${barL('50px')}${bar('60px')}<div style="width:100%;margin-top:4px">${bar('130px')}</div></div>`;
+    for (let i = 0; i < 2; i++) h += `<div style="display:flex;gap:10px;padding:10px 0"><div class="uii-skeleton" style="width:20px;height:20px;border-radius:50%"></div><div style="flex:1">${bar('70px')}<div style="margin-top:6px">${bar(`${160 + i * 20}px`)}</div></div></div>`;
+    h += `</div></div>`;
+    return h;
+  }
+
   function tabAudit() {
+    if (auditData === 'loading') return auditSkeleton();
     if (!auditData) {
       return `<div class="uii-empty">${IC.audit}<p>Scan this page for performance issues, oversized images, and unused CSS.</p><button class="uii-empty-btn" data-act="run-audit">Run Audit</button></div>`;
     }
@@ -1032,7 +1058,25 @@
     return p;
   }
 
+  function seoSkeleton() {
+    const bar = (w) => `<div class="uii-skeleton" style="width:${w};height:14px"></div>`;
+    const barL = (w) => `<div class="uii-skeleton" style="width:${w};height:20px"></div>`;
+    let h = `<div class="uii-audit-bar"><span class="uii-sec-title">SEO Analysis</span><button class="uii-btn-outline" disabled>Scanning...</button></div>`;
+    h += `<div class="uii-section"><div class="uii-sec-body" style="padding-top:16px"><div class="uii-audit-score">${barL('80px')}${bar('60px')}<div style="width:100%;margin-top:4px">${bar('140px')}</div></div></div></div>`;
+    h += `<div class="uii-section"><div class="uii-sec-hdr">${bar('90px')}</div><div class="uii-sec-body">`;
+    for (let i = 0; i < 6; i++) h += `<div class="uii-seo-meta-row">${bar('70px')}${bar(`${100 + i * 15}px`)}${bar('40px')}</div>`;
+    h += `</div></div>`;
+    h += `<div class="uii-section"><div class="uii-sec-hdr">${bar('120px')}</div><div class="uii-sec-body">`;
+    for (let i = 0; i < 4; i++) h += `<div class="uii-seo-meta-row">${bar('70px')}${bar(`${80 + i * 20}px`)}${bar('40px')}</div>`;
+    h += `</div></div>`;
+    h += `<div class="uii-section"><div class="uii-sec-hdr">${bar('130px')}</div><div class="uii-sec-body">`;
+    for (let i = 0; i < 5; i++) h += `<div style="display:flex;gap:8px;padding:4px 0">${bar('28px')}${bar(`${120 + i * 10}px`)}</div>`;
+    h += `</div></div>`;
+    return h;
+  }
+
   function tabSEO() {
+    if (seoData === 'loading') return seoSkeleton();
     if (!seoData) seoData = scanSEO();
     const s = seoData;
     const scoreBadge = s.score >= 80 ? 'uii-abadge--good' : s.score >= 50 ? 'uii-abadge--warn' : 'uii-abadge--poor';
@@ -1279,7 +1323,7 @@
     root.querySelectorAll('[data-act="reset-colors"]').forEach(b=>b.addEventListener('click',()=>{ revertAllColors(); render(); }));
     root.querySelectorAll('.uii-copy-prompt-btn').forEach(b=>b.addEventListener('click',()=>{ cp(b.dataset.prompt); }));
     // Audit tab events
-    root.querySelectorAll('[data-act="run-audit"]').forEach(b=>b.addEventListener('click',async()=>{ b.textContent='Scanning...'; b.disabled=true; await runAudit(); render(); }));
+    root.querySelectorAll('[data-act="run-audit"]').forEach(b=>b.addEventListener('click',async()=>{ auditData='loading'; render(); await runAudit(); render(); }));
     root.querySelectorAll('[data-act="highlight-cls"]').forEach(b=>b.addEventListener('click',()=>{
       document.querySelectorAll('.uii-cls-highlight').forEach(e=>e.remove());
       if(!auditData) return;
@@ -1299,7 +1343,7 @@
     root.querySelectorAll('[data-act="copy-spacing-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildSpacingPrompt(auditData)); }));
     // SEO tab events
     root.querySelectorAll('[data-act="copy-seo-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(seoData) cp(buildSEOPrompt(seoData)); }));
-    root.querySelectorAll('[data-act="rescan-seo"]').forEach(b=>b.addEventListener('click',()=>{ seoData = null; render(); }));
+    root.querySelectorAll('[data-act="rescan-seo"]').forEach(b=>b.addEventListener('click',()=>{ seoData = 'loading'; render(); setTimeout(()=>{ seoData = null; render(); }, 600); }));
     root.querySelectorAll('.uii-seo-group-copy').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
     root.querySelectorAll('.uii-seo-issue-copy').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
     root.querySelectorAll('[data-act="export-tokens-css"]').forEach(b=>b.addEventListener('click',()=>{ cp(exportTokensCSS()); }));
