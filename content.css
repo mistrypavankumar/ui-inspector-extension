@@ -170,7 +170,7 @@ img { display: block; }
 }
 .uii-cat-label { font-size: 14px; font-weight: 700; color: #1a1a2e; }
 
-.uii-color-band-wrap { margin: 0 18px 8px; }
+.uii-color-band-wrap { margin: 0 18px 8px; border-radius: 10px; background-image: linear-gradient(45deg, #e0e0e0 25%, transparent 25%), linear-gradient(-45deg, #e0e0e0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e0e0e0 75%), linear-gradient(-45deg, transparent 75%, #e0e0e0 75%); background-size: 12px 12px; background-position: 0 0, 0 6px, 6px -6px, -6px 0px; }
 .uii-color-band {
   padding: 14px 16px; border-radius: 10px;
   cursor: default; transition: transform .1s, box-shadow .15s;
@@ -180,6 +180,7 @@ img { display: block; }
 .uii-cb-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .uii-cb-hex { font-size: 14px; font-weight: 700; font-family: 'SF Mono','Fira Code',monospace; letter-spacing: .3px; flex: 1; }
 .uii-cb-orig { font-size: 10px; font-weight: 500; opacity: .6; }
+.uii-cb-alpha { font-size: 10px; font-weight: 600; opacity: .7; background: rgba(0,0,0,.12); padding: 1px 5px; border-radius: 4px; margin-left: 4px; vertical-align: middle; }
 .uii-cb-count { font-size: 11px; opacity: .55; margin-top: 2px; }
 
 /* Color picker trigger (label wrapping native input) */
@@ -198,6 +199,20 @@ img { display: block; }
 }
 .uii-color-input::-webkit-color-swatch-wrapper { padding: 0; }
 .uii-color-input::-webkit-color-swatch { border: none; border-radius: 50%; }
+.uii-cb-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.uii-alpha-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 60px; height: 6px; border-radius: 3px; cursor: pointer;
+  background: linear-gradient(to right, transparent, currentColor);
+  outline: none; opacity: .8; transition: opacity .12s;
+}
+.uii-alpha-slider:hover { opacity: 1; }
+.uii-alpha-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; border: 2px solid rgba(0,0,0,.25);
+  box-shadow: 0 1px 3px rgba(0,0,0,.2); cursor: pointer;
+}
 
 /* Reset button under band */
 .uii-cb-reset {

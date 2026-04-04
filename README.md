@@ -9,7 +9,7 @@ A Chrome extension that extracts and inspects design tokens from any webpage —
 | Tab | What it does |
 |-----|-------------|
 | **Overview** | Page title/URL, typography summary (heading & body fonts), color palette preview, contrast scanner, page stats |
-| **Colors** | All colors with instance counts. **Palette** view (sorted by usage) or **Categories** view (grouped by text/background/border). Live color picker to swap colors on the page in real time. Reset individual or all changes. |
+| **Colors** | All colors with instance counts, including alpha/opacity values. **Palette** view (sorted by usage) or **Categories** view (grouped by text/background/border). Live color picker with alpha slider to swap colors on the page in real time. Reset individual or all changes. |
 | **Typography** | Font style cards with live "AaBbCcDdEeFf" preview rendered in the actual font, size, and weight. Instance counts per style. |
 | **Assets** | All images and SVGs on the page. Grid or list view. File sizes. Download any asset. |
 | **Inspector** | Click any element to see: selector with syntax highlighting, box model diagram, text properties, colors with swatches, layout (flex/grid details), decoration, and contrast ratio with AA compliance badge. |
@@ -26,10 +26,13 @@ A Chrome extension that extracts and inspects design tokens from any webpage —
 - Calculates WCAG contrast ratios for text against background
 - Badges: **Excellent** (7+), **AA Pass** (4.5+), **AA Large** (3+), **Poor** (<3)
 - When contrast is poor, the Inspector suggests an **AA-compliant alternative color** that preserves the original hue
+- **Copy Prompt to Fix Contrast** — one-click button in both the Overview scanner and Inspector that copies a ready-to-use prompt describing the contrast issues with suggested fixes, useful for AI-assisted or team workflows
 
 ### Live Color Editing
 
 - Click the circle picker on any color band to open the native color picker
+- **Alpha slider** on every color band — drag to adjust opacity (0-100%), live-updates elements with `rgba()` values
+- Colors with alpha display as 8-digit hex (e.g. `#FF000080`) with a percentage badge
 - All elements using that color update in real time as you pick
 - "Reset" reverts individual colors; "Reset All" reverts everything
 - Closing the panel automatically reverts all changes
@@ -69,7 +72,7 @@ ui-inspector-extension/
 - **Manifest V3** Chrome extension
 - **Shadow DOM** for CSS isolation — the panel renders inside a shadow root so no host page styles leak in
 - **Vanilla JS** — no frameworks, no build step
-- Native `<input type="color">` for the color picker
+- Native `<input type="color">` + custom alpha range slider for the color picker
 - `document.elementsFromPoint()` for accurate deep element targeting
 - `getComputedStyle()` for all property extraction
 - WCAG relative luminance formula for contrast ratios

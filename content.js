@@ -26,9 +26,10 @@
 
   /* ── Util ────────────────────────────────────────────── */
   const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const hex = rgb => { const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/); return m ? '#' + [m[1],m[2],m[3]].map(x => parseInt(x).toString(16).padStart(2,'0')).join('') : rgb; };
+  const hex = rgb => { const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([0-9.]+))?\)/); if(!m) return rgb; const base='#'+[m[1],m[2],m[3]].map(x=>parseInt(x).toString(16).padStart(2,'0')).join(''); if(m[4]!==undefined&&parseFloat(m[4])<1){ return base+Math.round(parseFloat(m[4])*255).toString(16).padStart(2,'0'); } return base; };
+  const hex6 = h => h.startsWith('#') ? h.slice(0,7) : h;
   const up = h => h.startsWith('#') ? h.toUpperCase() : h;
-  const lum = h => { if (!h.startsWith('#') || h.length < 7) return 0; const r=parseInt(h.slice(1,3),16), g=parseInt(h.slice(3,5),16), b=parseInt(h.slice(5,7),16); return (0.299*r+0.587*g+0.114*b)/255; };
+  const lum = h => { const c=hex6(h); if (!c.startsWith('#') || c.length < 7) return 0; const r=parseInt(c.slice(1,3),16), g=parseInt(c.slice(3,5),16), b=parseInt(c.slice(5,7),16); return (0.299*r+0.587*g+0.114*b)/255; };
   const contrast = h => lum(h) > 0.5 ? '#111' : '#fff';
   const vis = el => { const s=getComputedStyle(el); return s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0'; };
   const own = el => el.closest('#'+ROOT)||el.id===ROOT||el.id===OV_ID||el.id===TT_ID||el.closest('#'+TT_ID)||el.classList?.contains('uii-dim-label');
@@ -70,7 +71,8 @@
 
   /* ── Contrast ratio helper ──────────────────────────── */
   function relLum(h) {
-    const [r,g,b] = [h.slice(1,3),h.slice(3,5),h.slice(5,7)].map(c => { let v=parseInt(c,16)/255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); });
+    const c=hex6(h);
+    const [r,g,b] = [c.slice(1,3),c.slice(3,5),c.slice(5,7)].map(x => { let v=parseInt(x,16)/255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); });
     return 0.2126*r+0.7152*g+0.0722*b;
   }
   function contrastRatio(fg,bg) {
@@ -227,7 +229,14 @@
     });
     const unique = [...new Map(textColors.map(c=>[c.fg+c.bg,c])).values()].sort((a,b)=>a.ratio-b.ratio).slice(0,4);
     if (unique.length) {
-      h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Contrast Scanner <span class="uii-count">${unique.length}</span></span></div><div class="uii-sec-body">`;
+      const poorItems = unique.filter(c => parseFloat(c.ratio) < 4.5);
+      const contrastPrompt = poorItems.length ? poorItems.map(c => {
+        const sg = suggestColor(c.fg, c.bg);
+        return `- Text ${up(c.fg)} on background ${up(c.bg)} has contrast ratio ${c.ratio}:1 (WCAG AA requires 4.5:1). Suggested fix: change text color to ${up(sg)}.`;
+      }).join('\n') : '';
+      const promptText = `Fix the following WCAG contrast issues on this page:\n\n${contrastPrompt}\n\nPlease update the CSS so all text meets WCAG AA (4.5:1 minimum contrast ratio). Keep the color palette as close to the original as possible while achieving compliance.`;
+      const promptBtnHtml = poorItems.length ? `<button class="uii-btn-outline uii-copy-prompt-btn" data-prompt="${esc(promptText).replace(/"/g,'&quot;')}">Copy Prompt</button>` : '';
+      h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Contrast Scanner <span class="uii-count">${unique.length}</span></span>${promptBtnHtml}</div><div class="uii-sec-body">`;
       unique.forEach(c => {
         const ok = parseFloat(c.ratio) >= 4.5;
         h += `<div class="uii-contrast-card"><div class="uii-contrast-icon">Aa</div><span class="uii-contrast-ratio">${c.ratio} : 1</span><span class="uii-contrast-badge ${ok?'uii-contrast-badge--good':'uii-contrast-badge--poor'}">${ok?'AA Pass':'Poor'}</span></div>`;
@@ -271,13 +280,21 @@
       const swapped = colorSwaps.has(c);
       const currentColor = swapped ? colorSwaps.get(c).newHex : c;
       const currentTc = contrast(currentColor);
+      const hasAlpha = currentColor.length === 9;
+      const alphaVal = hasAlpha ? Math.round(parseInt(currentColor.slice(7,9),16)/255*100) : 100;
+      const alphaTag = hasAlpha ? ` <span class="uii-cb-alpha">${alphaVal}%</span>` : '';
+      const alphaHex = hasAlpha ? currentColor.slice(7,9) : 'ff';
+      const alphaInt = parseInt(alphaHex,16);
       h += `<div class="uii-color-band-wrap">
         <div class="uii-color-band" style="background:${currentColor};color:${currentTc}" data-color="${c}">
           <div class="uii-cb-top">
-            <span class="uii-cb-hex">${up(currentColor)}${swapped ? ` <span class="uii-cb-orig">(was ${up(c)})</span>` : ''}</span>
-            <label class="uii-color-trigger" title="Change color">
-              <input type="color" class="uii-color-input" value="${currentColor}" data-orig="${c}">
-            </label>
+            <span class="uii-cb-hex">${up(currentColor)}${alphaTag}${swapped ? ` <span class="uii-cb-orig">(was ${up(c)})</span>` : ''}</span>
+            <div class="uii-cb-controls">
+              <label class="uii-color-trigger" title="Change color">
+                <input type="color" class="uii-color-input" value="${hex6(currentColor)}" data-orig="${c}">
+              </label>
+              <input type="range" class="uii-alpha-slider" min="0" max="255" value="${alphaInt}" data-orig="${c}" title="Alpha: ${alphaVal}%">
+            </div>
           </div>
           <span class="uii-cb-count">${n} instance${n !== 1 ? 's' : ''}</span>
         </div>
@@ -288,11 +305,13 @@
   }
 
   /* ── Live Color Swap ─────────────────────────────────── */
+  const hexToCSS = h => { if(!h.startsWith('#')) return h; const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16); if(h.length===9){ const a=parseInt(h.slice(7,9),16)/255; return `rgba(${r},${g},${b},${a.toFixed(3)})`; } return h; };
   function swapColor(oldHex, newHex) {
     // Revert previous swap for this color first
     revertColor(oldHex);
     if (oldHex === newHex) return;
 
+    const cssVal = hexToCSS(newHex);
     const originals = [];
     const props = ['color','backgroundColor','borderColor','outlineColor'];
     document.querySelectorAll('*').forEach(el => {
@@ -301,11 +320,11 @@
       props.forEach(prop => {
         const val = cs[prop];
         if (!val || val === 'rgba(0, 0, 0, 0)' || val === 'transparent') return;
-        if (hex(val).toLowerCase() === oldHex.toLowerCase()) {
+        if (hex6(hex(val)).toLowerCase() === hex6(oldHex).toLowerCase()) {
           const cssProp = prop.replace(/([A-Z])/g, '-$1').toLowerCase();
           const orig = el.style.getPropertyValue(cssProp);
           originals.push({ el, cssProp, orig });
-          el.style.setProperty(cssProp, newHex, 'important');
+          el.style.setProperty(cssProp, cssVal, 'important');
         }
       });
     });
@@ -424,6 +443,9 @@
         const suggested = suggestColor(tcHex, effBg);
         const sugRatio = parseFloat(contrastRatio(suggested, effBg));
         h += `<div class="uii-suggest"><div class="uii-suggest-label">Suggested text color for AA</div><div class="uii-suggest-row"><span class="uii-swatch" style="background:${suggested}"></span><strong>${up(suggested)}</strong><span class="uii-suggest-ratio">${sugRatio.toFixed(1)}:1</span><button class="uii-pcopy" style="display:flex" onclick="event.stopPropagation();navigator.clipboard.writeText('${up(suggested)}')">${IC.copy}</button></div></div>`;
+        const elSelector = esc(tag) + cls.map(c=>'.'+esc(c)).join('');
+        const inspPrompt = `Fix the contrast issue on the element <${elSelector}>:\n\n- Current text color: ${up(tcHex)}\n- Background color: ${up(effBg)}\n- Current contrast ratio: ${ratio.toFixed(2)}:1 (WCAG AA requires 4.5:1)\n- Suggested text color: ${up(suggested)} (${sugRatio.toFixed(1)}:1)\n\nUpdate the CSS for this element so it meets WCAG AA contrast ratio (4.5:1 minimum). Keep the color as close to the original ${up(tcHex)} as possible while achieving compliance.`;
+        h += `<button class="uii-btn-outline uii-copy-prompt-btn" style="width:100%;margin-top:8px" data-prompt="${esc(inspPrompt).replace(/"/g,'&quot;')}">Copy Prompt to Fix Contrast</button>`;
       }
       h += '</div>';
     }
@@ -496,12 +518,22 @@
     }));
     // Color pickers — native input inside shadow DOM, label click opens it
     root.querySelectorAll('.uii-color-input').forEach(inp => {
-      inp.addEventListener('input', e => { e.stopPropagation(); swapColor(inp.dataset.orig, e.target.value); });
-      inp.addEventListener('change', e => { e.stopPropagation(); swapColor(inp.dataset.orig, e.target.value); render(); });
+      const getAlpha = () => { const sl = inp.closest('.uii-cb-controls')?.querySelector('.uii-alpha-slider'); return sl ? parseInt(sl.value) : 255; };
+      const withAlpha = (h,a) => a<255 ? h + a.toString(16).padStart(2,'0') : h;
+      inp.addEventListener('input', e => { e.stopPropagation(); swapColor(inp.dataset.orig, withAlpha(e.target.value, getAlpha())); });
+      inp.addEventListener('change', e => { e.stopPropagation(); swapColor(inp.dataset.orig, withAlpha(e.target.value, getAlpha())); render(); });
       inp.addEventListener('click', e => e.stopPropagation());
+    });
+    // Alpha sliders
+    root.querySelectorAll('.uii-alpha-slider').forEach(sl => {
+      const getHex = () => { const inp = sl.closest('.uii-cb-controls')?.querySelector('.uii-color-input'); return inp ? inp.value : '#000000'; };
+      const withAlpha = (h,a) => a<255 ? h + a.toString(16).padStart(2,'0') : h;
+      sl.addEventListener('input', e => { e.stopPropagation(); const a=parseInt(e.target.value); sl.title=`Alpha: ${Math.round(a/255*100)}%`; swapColor(sl.dataset.orig, withAlpha(getHex(), a)); });
+      sl.addEventListener('change', e => { e.stopPropagation(); swapColor(sl.dataset.orig, withAlpha(getHex(), parseInt(e.target.value))); render(); });
     });
     root.querySelectorAll('[data-reset]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); revertColor(b.dataset.reset); render(); }));
     root.querySelectorAll('[data-act="reset-colors"]').forEach(b=>b.addEventListener('click',()=>{ revertAllColors(); render(); }));
+    root.querySelectorAll('.uii-copy-prompt-btn').forEach(b=>b.addEventListener('click',()=>{ cp(b.dataset.prompt); }));
     root.querySelectorAll('[data-cview]').forEach(b=>b.addEventListener('click',()=>{ colorView=b.dataset.cview; render(); }));
     root.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{assetView=b.dataset.view;render();}));
     root.querySelectorAll('[data-dl]').forEach(b=>b.addEventListener('click',e=>{
