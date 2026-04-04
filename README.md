@@ -1,6 +1,6 @@
 # UI Inspector
 
-A Chrome extension that extracts and inspects design tokens from any webpage — colors, typography, assets, spacing, contrast ratios, and more. Built for developers and designers who need to audit or replicate UI from live sites.
+A Chrome extension that extracts and inspects design tokens from any webpage — colors, typography, assets, spacing, contrast ratios, accessibility, performance, and more. Includes a full audit tab with AI-ready prompts to fix issues. Built for developers and designers who need to audit, debug, or replicate UI from live sites.
 
 ## Features
 
@@ -12,7 +12,7 @@ A Chrome extension that extracts and inspects design tokens from any webpage —
 | **Colors** | All colors with instance counts, including alpha/opacity values. **Palette** view (sorted by usage) or **Categories** view (grouped by text/background/border). Live color picker with alpha slider to swap colors on the page in real time. Reset individual or all changes. |
 | **Typography** | Font style cards with live "AaBbCcDdEeFf" preview rendered in the actual font, size, and weight. Instance counts per style. |
 | **Assets** | All images and SVGs on the page. Grid or list view. File sizes. Download any asset. |
-| **Audit** | One-click performance audit: Layout Shift detection, Image Audit (oversized/lazy/alt/WebP), Unused CSS scanner. Each section has a **Copy Prompt** button for AI-assisted fixes. |
+| **Audit** | One-click performance audit: Layout Shifts, Image Audit, Unused CSS, Accessibility Score Card, and Export Design Tokens. Each section has a **Copy Prompt** button for AI-assisted fixes. |
 | **Inspector** | Click any element to see: selector with syntax highlighting, box model diagram, text properties, colors with swatches, layout (flex/grid details), decoration, and contrast ratio with AA compliance badge. |
 
 ### Element Picker
@@ -39,15 +39,20 @@ A Chrome extension that extracts and inspects design tokens from any webpage —
 - Closing the panel automatically reverts all changes
 - Export all colors (or swapped colors) as JSON
 
-### Performance Audit
+### Audit Tab
 
-On-demand audit with three sections:
+On-demand audit with five sections — click **Run Audit** to scan the page:
 
 - **Layout Shift Highlighter** — detects elements causing CLS (Cumulative Layout Shift). Shows a CLS score with Good/Needs Work/Poor badge. Flags images missing `width`/`height` attributes and `@font-face` rules without `font-display: swap`. "Highlight" button overlays culprit elements on the page.
 - **Image Audit** — flags oversized images (natural vs rendered size with % wasted), missing `loading="lazy"` on below-fold images, missing `alt` attributes, and images that should be converted to WebP/AVIF. Click any row to scroll to the image on the page.
 - **Unused CSS Detector** — scans all accessible stylesheets and finds CSS rules that don't match any element on the page. Shows count of unused vs total rules. Copy individual rules or all at once. Cross-origin sheets are gracefully skipped.
+- **Accessibility Score Card** — scans for heading hierarchy violations (h1->h3 skips, missing/multiple h1), images without `alt`, form inputs without labels, buttons/links without accessible text, missing `lang` attribute on `<html>`, unsafe `target="_blank"` links without `rel="noopener"`, and positive `tabindex` values. Shows a 0-100 score with issues grouped by severity (errors/warnings/info). Each group (Errors, Warnings, Info) has its own **Copy Prompt** button, and every individual issue has a copy button on hover for single-issue prompts.
+- **Export Design Tokens** — one-click export of all extracted colors, fonts, font sizes, border radii, shadows, and spacing values from the page in three formats:
+  - **CSS Variables** — `:root` custom properties ready to paste into a stylesheet
+  - **Tailwind Config** — `tailwind.config.js` with `theme.extend` populated
+  - **JSON** — structured token data with source URL and timestamp
 
-Each section includes a **Copy Prompt** button that generates an AI-ready prompt describing the issues with specific fix instructions. The **"Copy All to AI"** button at the top combines all sections into a single prompt you can paste into Claude, ChatGPT, or any AI tool to fix your codebase.
+Every audit section includes a **Copy Prompt** button that generates an AI-ready prompt with specific fix instructions. Copy at three levels of granularity: a single issue, an entire severity group, a full section, or everything at once with the **"Copy All to AI"** button at the top — paste directly into Claude, ChatGPT, or any AI tool to fix your codebase.
 
 ### UI
 
@@ -72,7 +77,7 @@ ui-inspector-extension/
   manifest.json      — Chrome MV3 manifest
   popup.html         — Extension popup (Open Inspector / Pick Element)
   popup.js           — Popup click handlers
-  content.js         — Core logic: scanning, rendering, picker, color swaps
+  content.js         — Core logic: scanning, rendering, picker, color swaps, audit, a11y, token export
   content.css        — Panel styles (loaded into Shadow DOM)
   icons/             — Extension icons (16, 48, 128px)
   docs/mockups/      — HTML mockup files
@@ -89,6 +94,7 @@ ui-inspector-extension/
 - WCAG relative luminance formula for contrast ratios
 - `PerformanceObserver` with `layout-shift` entries for CLS detection
 - `document.styleSheets` + `cssRules` iteration for unused CSS detection
+- DOM traversal for accessibility checks (headings, labels, ARIA, tab order)
 
 ## Permissions
 

@@ -304,6 +304,14 @@ img { display: block; }
 .uii-audit-issue-icon { width: 20px; height: 20px; flex-shrink: 0; fill: #a0a0b4; margin-top: 2px; }
 .uii-audit-issue-icon svg { width: 18px; height: 18px; fill: currentColor; }
 .uii-audit-issue-body { flex: 1; min-width: 0; }
+.uii-issue-copy {
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  border: none; background: none; color: #ccc; cursor: pointer; border-radius: 6px;
+  flex-shrink: 0; align-self: flex-start; margin-top: 2px; opacity: 0; transition: opacity .12s;
+}
+.uii-audit-issue:hover .uii-issue-copy { opacity: 1; }
+.uii-issue-copy:hover { background: rgba(0,0,0,.05); color: #666; }
+.uii-issue-copy svg { width: 14px; height: 14px; fill: currentColor; }
 .uii-audit-issue-tag {
   display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
   padding: 2px 7px; border-radius: 4px; margin-bottom: 4px; letter-spacing: .3px;
@@ -358,6 +366,17 @@ img { display: block; }
 .uii-rule-copy svg { width: 14px; height: 14px; fill: currentColor; }
 
 .uii-audit-note { font-size: 11px; color: #a0a0b4; padding: 6px 0; font-style: italic; }
+
+/* Audit: Accessibility */
+.uii-a11y-group-hdr { display: flex; align-items: center; justify-content: space-between; margin: 10px 0 4px; padding-top: 8px; border-top: 1px solid #f0f0f5; }
+.uii-a11y-group-hdr:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+.uii-a11y-group-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #6a6a80; }
+.uii-a11y-fix { font-size: 11px; color: #16a34a; margin-top: 3px; line-height: 1.4; }
+.uii-atag--error { background: rgba(239,68,68,.12); color: #dc2626; }
+.uii-atag--a11y-info { background: rgba(59,130,246,.10); color: #2563eb; }
+
+/* Audit: Export Design Tokens */
+.uii-token-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ── Inspector Tab ─────────────────────────────────────── */
 .uii-insp-bar {

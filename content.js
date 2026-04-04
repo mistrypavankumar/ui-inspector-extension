@@ -202,16 +202,121 @@
     return { unused, totalRules, skippedSheets };
   }
 
+  /* ── Audit: Accessibility ─────────────────────────────── */
+  function scanAccessibility() {
+    const issues = [];
+
+    // 1. Heading hierarchy — check for skipped levels
+    const headings = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(el => !own(el) && vis(el));
+    let prevLevel = 0;
+    headings.forEach(h => {
+      const level = parseInt(h.tagName[1]);
+      if (prevLevel && level > prevLevel + 1) {
+        issues.push({ type: 'heading-skip', severity: 'warn', el: h,
+          desc: `Heading jumps from <h${prevLevel}> to <h${level}>`,
+          fix: `Change this <h${level}> to <h${prevLevel + 1}> or add the missing intermediate heading levels.` });
+      }
+      prevLevel = level;
+    });
+    const h1Count = headings.filter(h => h.tagName === 'H1').length;
+    if (h1Count === 0) {
+      issues.push({ type: 'missing-h1', severity: 'warn', el: null,
+        desc: 'Page has no <h1> element', fix: 'Add a single <h1> element for the main page title.' });
+    } else if (h1Count > 1) {
+      issues.push({ type: 'multiple-h1', severity: 'info', el: null,
+        desc: `Page has ${h1Count} <h1> elements`, fix: 'Use only one <h1> per page. Convert extras to <h2> or lower.' });
+    }
+
+    // 2. Images without alt
+    document.querySelectorAll('img').forEach(img => {
+      if (own(img)) return;
+      if (!img.hasAttribute('alt')) {
+        issues.push({ type: 'img-no-alt', severity: 'error', el: img,
+          desc: `Image missing alt attribute: ${(img.src||'').split('/').pop().split('?')[0].slice(0,40)||'(no src)'}`,
+          fix: 'Add a descriptive alt attribute. Use alt="" for decorative images.' });
+      }
+    });
+
+    // 3. Form inputs without labels
+    document.querySelectorAll('input,select,textarea').forEach(inp => {
+      if (own(inp) || inp.type === 'hidden' || inp.type === 'submit' || inp.type === 'button') return;
+      const hasLabel = inp.id && document.querySelector(`label[for="${inp.id}"]`);
+      const wrappedInLabel = inp.closest('label');
+      const hasAria = inp.getAttribute('aria-label') || inp.getAttribute('aria-labelledby');
+      if (!hasLabel && !wrappedInLabel && !hasAria) {
+        const name = inp.name || inp.id || inp.type || 'unknown';
+        issues.push({ type: 'input-no-label', severity: 'error', el: inp,
+          desc: `Form input "${name}" has no associated label`,
+          fix: `Add a <label for="${inp.id||'...'}"> or wrap the input in a <label>, or add aria-label.` });
+      }
+    });
+
+    // 4. Buttons/links without accessible text
+    document.querySelectorAll('button,a,[role="button"]').forEach(el => {
+      if (own(el) || !vis(el)) return;
+      const text = (el.textContent || '').trim();
+      const ariaLabel = el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || el.getAttribute('title');
+      const imgAlt = el.querySelector('img[alt]')?.getAttribute('alt');
+      if (!text && !ariaLabel && !imgAlt) {
+        const tag = el.tagName.toLowerCase();
+        issues.push({ type: 'empty-interactive', severity: 'error', el,
+          desc: `<${tag}> has no accessible text`,
+          fix: `Add visible text, aria-label, or title attribute to this <${tag}>.` });
+      }
+    });
+
+    // 5. Missing lang attribute
+    if (!document.documentElement.hasAttribute('lang')) {
+      issues.push({ type: 'no-lang', severity: 'warn', el: null,
+        desc: 'Missing lang attribute on <html>', fix: 'Add lang="en" (or appropriate language) to the <html> element.' });
+    }
+
+    // 6. Links opening in new tab without warning
+    document.querySelectorAll('a[target="_blank"]').forEach(a => {
+      if (own(a)) return;
+      const text = (a.textContent||'').toLowerCase();
+      const ariaLabel = (a.getAttribute('aria-label')||'').toLowerCase();
+      if (!text.includes('new tab') && !text.includes('new window') && !ariaLabel.includes('new tab') && !ariaLabel.includes('new window')) {
+        const rel = a.getAttribute('rel') || '';
+        if (!rel.includes('noopener')) {
+          issues.push({ type: 'link-new-tab', severity: 'info', el: a,
+            desc: `Link opens in new tab without rel="noopener": ${(a.textContent||'').trim().slice(0,30)||a.href?.slice(0,30)||'(empty)'}`,
+            fix: 'Add rel="noopener noreferrer" and consider adding a visual indicator or aria-label mentioning "opens in new tab".' });
+        }
+      }
+    });
+
+    // 7. Tabindex > 0 (disrupts natural tab order)
+    document.querySelectorAll('[tabindex]').forEach(el => {
+      if (own(el)) return;
+      const ti = parseInt(el.getAttribute('tabindex'));
+      if (ti > 0) {
+        issues.push({ type: 'tabindex-positive', severity: 'warn', el,
+          desc: `Element has tabindex="${ti}" which disrupts natural tab order`,
+          fix: 'Use tabindex="0" to add to tab order, or tabindex="-1" for programmatic focus. Avoid positive values.' });
+      }
+    });
+
+    // Score: rough percentage (0-100)
+    const weights = { error: 10, warn: 5, info: 2 };
+    const deductions = issues.reduce((s, i) => s + (weights[i.severity] || 0), 0);
+    const score = Math.max(0, 100 - deductions);
+
+    return { issues, score };
+  }
+
   /* ── Run full audit ─────────────────────────────────── */
   async function runAudit() {
     const shifts = await scanLayoutShifts();
     const culprits = scanCLSCulprits();
     const images = scanImages();
     const { unused, totalRules, skippedSheets } = scanUnusedCSS();
+    const a11y = scanAccessibility();
     const totalCLS = shifts.reduce((s, e) => s + e.score, 0);
     auditData = { layoutShifts: shifts, clsCulprits: culprits, totalCLS,
       images, imageIssueCount: images.filter(i => i.issues.length > 0).length,
-      unusedCSS: unused, unusedCSSCount: unused.length, totalRulesScanned: totalRules, skippedSheets };
+      unusedCSS: unused, unusedCSSCount: unused.length, totalRulesScanned: totalRules, skippedSheets,
+      a11y };
   }
 
   /* ── Render (Shadow DOM) ─────────────────────────────── */
@@ -518,13 +623,72 @@
     p += `\nPlease remove or clean up these selectors from the stylesheets. Verify each before removing in case they are used dynamically.`;
     return p;
   }
+  function buildA11yPrompt(a) {
+    if (!a.a11y || !a.a11y.issues.length) return '';
+    const byType = { error: [], warn: [], info: [] };
+    a.a11y.issues.forEach(i => (byType[i.severity] || byType.info).push(i));
+    let p = `Fix the following accessibility issues on this page (score: ${a.a11y.score}/100):\n\n`;
+    if (byType.error.length) { p += `ERRORS (critical):\n`; byType.error.forEach((i, n) => { p += `${n+1}. ${i.desc}\n   Fix: ${i.fix}\n`; }); p += '\n'; }
+    if (byType.warn.length) { p += `WARNINGS:\n`; byType.warn.forEach((i, n) => { p += `${n+1}. ${i.desc}\n   Fix: ${i.fix}\n`; }); p += '\n'; }
+    if (byType.info.length) { p += `INFO:\n`; byType.info.forEach((i, n) => { p += `${n+1}. ${i.desc}\n   Fix: ${i.fix}\n`; }); p += '\n'; }
+    p += `Please update the HTML to fix all accessibility issues. Prioritize errors first, then warnings.`;
+    return p;
+  }
   function buildFullAuditPrompt(a) {
     const parts = [];
     const cls = buildCLSPrompt(a); if (cls) parts.push(cls);
     const img = buildImagePrompt(a); if (img) parts.push(img);
     const css = buildCSSPrompt(a); if (css) parts.push(css);
+    const a11y = buildA11yPrompt(a); if (a11y) parts.push(a11y);
     if (!parts.length) return 'No issues found in the audit.';
     return `Page audit results for: ${location.href}\n\n` + parts.join('\n\n---\n\n') + `\n\nFix all the above issues to improve page performance, accessibility, and code quality.`;
+  }
+
+  /* ── Design Token Export ────────────────────────────── */
+  function getTokenData() {
+    if (!data) data = scan();
+    const colors = sorted(data.colors, 200).map(([c]) => c);
+    const fonts = sorted(data.fontFamilies, 20).map(([f]) => f);
+    const sizes = sorted(data.fontSizes, 30).map(([s]) => s);
+    const radii = sorted(data.borderRadii, 20).map(([r]) => r);
+    const shadows = sorted(data.shadows, 10).map(([s]) => s);
+    const spacing = [...new Set(sorted(data.spacing, 50).map(([s]) => {
+      const m = s.match(/:\s*(.+)/); return m ? m[1].trim() : s;
+    }))].slice(0, 20);
+    return { colors, fonts, sizes, radii, shadows, spacing };
+  }
+
+  function exportTokensCSS() {
+    const t = getTokenData();
+    let css = '/* Design Tokens — extracted by UI Inspector */\n:root {\n';
+    t.colors.forEach((c, i) => { css += `  --color-${i + 1}: ${c};\n`; });
+    css += '\n';
+    t.fonts.forEach((f, i) => { css += `  --font-${i + 1}: '${f}';\n`; });
+    css += '\n';
+    t.sizes.forEach((s, i) => { css += `  --font-size-${i + 1}: ${s};\n`; });
+    css += '\n';
+    t.radii.forEach((r, i) => { css += `  --radius-${i + 1}: ${r};\n`; });
+    if (t.shadows.length) { css += '\n'; t.shadows.forEach((s, i) => { css += `  --shadow-${i + 1}: ${s};\n`; }); }
+    if (t.spacing.length) { css += '\n'; t.spacing.forEach((s, i) => { css += `  --spacing-${i + 1}: ${s};\n`; }); }
+    css += '}\n';
+    return css;
+  }
+
+  function exportTokensTailwind() {
+    const t = getTokenData();
+    const obj = { theme: { extend: { colors: {}, fontFamily: {}, fontSize: {}, borderRadius: {}, boxShadow: {} } } };
+    const ext = obj.theme.extend;
+    t.colors.forEach((c, i) => { ext.colors[`brand-${i + 1}`] = c; });
+    t.fonts.forEach((f, i) => { ext.fontFamily[f.toLowerCase().replace(/\s+/g, '-')] = [`'${f}'`, 'sans-serif']; });
+    t.sizes.forEach((s, i) => { ext.fontSize[`custom-${i + 1}`] = s; });
+    t.radii.forEach((r, i) => { ext.borderRadius[`custom-${i + 1}`] = r; });
+    t.shadows.forEach((s, i) => { ext.boxShadow[`custom-${i + 1}`] = s; });
+    return `// tailwind.config.js — extracted by UI Inspector\nmodule.exports = ${JSON.stringify(obj, null, 2)}\n`;
+  }
+
+  function exportTokensJSON() {
+    const t = getTokenData();
+    return JSON.stringify({ source: location.href, extractedAt: new Date().toISOString(), tokens: t }, null, 2);
   }
 
   function tabAudit() {
@@ -532,7 +696,7 @@
       return `<div class="uii-empty">${IC.audit}<p>Scan this page for performance issues, oversized images, and unused CSS.</p><button class="uii-empty-btn" data-act="run-audit">Run Audit</button></div>`;
     }
     const a = auditData;
-    const hasAnyIssue = a.clsCulprits.length || a.images.some(i => i.issues.length > 0) || a.unusedCSSCount;
+    const hasAnyIssue = a.clsCulprits.length || a.images.some(i => i.issues.length > 0) || a.unusedCSSCount || (a.a11y && a.a11y.issues.length);
     let h = `<div class="uii-audit-bar"><span class="uii-sec-title">Audit Results</span><div style="display:flex;gap:6px">`;
     if (hasAnyIssue) h += `<button class="uii-btn-outline uii-btn-accent" data-act="copy-full-audit">Copy All to AI</button>`;
     h += `<button class="uii-btn-outline" data-act="run-audit">Re-scan</button></div></div>`;
@@ -599,6 +763,46 @@
       h += `<div class="uii-audit-pass">${IC.check} No unused CSS rules found</div>`;
     }
     h += `</div></div>`;
+
+    // — Accessibility —
+    if (a.a11y) {
+      const a11y = a.a11y;
+      const scoreBadge = a11y.score >= 90 ? 'uii-abadge--good' : a11y.score >= 60 ? 'uii-abadge--warn' : 'uii-abadge--poor';
+      const scoreLabel = a11y.score >= 90 ? 'Good' : a11y.score >= 60 ? 'Needs Work' : 'Poor';
+      const errors = a11y.issues.filter(i => i.severity === 'error');
+      const warns = a11y.issues.filter(i => i.severity === 'warn');
+      const infos = a11y.issues.filter(i => i.severity === 'info');
+      h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Accessibility <span class="uii-count">${a11y.issues.length}</span></span>`;
+      if (a11y.issues.length) h += `<button class="uii-btn-outline uii-btn-sm" data-act="copy-a11y-prompt">Copy Prompt</button>`;
+      h += `</div><div class="uii-sec-body">`;
+      h += `<div class="uii-audit-score"><span class="uii-audit-score-val">${a11y.score}</span><span class="uii-abadge ${scoreBadge}">${scoreLabel}</span><span class="uii-audit-score-label">Accessibility Score</span></div>`;
+      if (a11y.issues.length) {
+        const renderGroup = (label, items, tagCls) => {
+          if (!items.length) return '';
+          const groupPrompt = `Fix the following ${items.length} accessibility ${label.toLowerCase()} on this page:\n\n` + items.map((i, n) => `${n+1}. [${i.type}] ${i.desc}\n   Fix: ${i.fix}`).join('\n\n') + `\n\nPlease update the HTML/CSS to resolve all of these.`;
+          let g = `<div class="uii-a11y-group-hdr"><span class="uii-a11y-group-label">${label} (${items.length})</span><button class="uii-btn-outline uii-btn-sm" data-act="copy-a11y-group" data-prompt="${esc(groupPrompt).replace(/"/g,'&quot;')}">Copy Prompt</button></div>`;
+          items.forEach(i => {
+            const singlePrompt = `Fix this accessibility issue:\n\n- Issue: ${i.desc}\n- Fix: ${i.fix}\n\nPlease update the HTML/CSS to resolve this.`;
+            g += `<div class="uii-audit-issue"><div class="uii-audit-issue-icon">${IC.warn}</div><div class="uii-audit-issue-body"><div class="uii-audit-issue-tag ${tagCls}">${esc(i.type)}</div><div class="uii-audit-issue-fix">${esc(i.desc)}</div><div class="uii-a11y-fix">${esc(i.fix)}</div></div><button class="uii-issue-copy" data-act="copy-a11y-issue" data-prompt="${esc(singlePrompt).replace(/"/g,'&quot;')}" title="Copy prompt">${IC.copy}</button></div>`;
+          });
+          return g;
+        };
+        h += renderGroup('Errors', errors, 'uii-atag--error');
+        h += renderGroup('Warnings', warns, 'uii-atag--cls');
+        h += renderGroup('Info', infos, 'uii-atag--a11y-info');
+      } else {
+        h += `<div class="uii-audit-pass">${IC.check} No accessibility issues found</div>`;
+      }
+      h += `</div></div>`;
+    }
+
+    // — Export Design Tokens —
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Export Design Tokens</span></div><div class="uii-sec-body">`;
+    h += `<div class="uii-token-btns">`;
+    h += `<button class="uii-btn-outline" data-act="export-tokens-css">CSS Variables</button>`;
+    h += `<button class="uii-btn-outline" data-act="export-tokens-tailwind">Tailwind Config</button>`;
+    h += `<button class="uii-btn-outline" data-act="export-tokens-json">JSON</button>`;
+    h += `</div></div></div>`;
 
     return h;
   }
@@ -777,6 +981,12 @@
     root.querySelectorAll('[data-act="copy-cls-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildCLSPrompt(auditData)); }));
     root.querySelectorAll('[data-act="copy-img-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildImagePrompt(auditData)); }));
     root.querySelectorAll('[data-act="copy-css-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildCSSPrompt(auditData)); }));
+    root.querySelectorAll('[data-act="copy-a11y-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildA11yPrompt(auditData)); }));
+    root.querySelectorAll('[data-act="copy-a11y-issue"]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
+    root.querySelectorAll('[data-act="copy-a11y-group"]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
+    root.querySelectorAll('[data-act="export-tokens-css"]').forEach(b=>b.addEventListener('click',()=>{ cp(exportTokensCSS()); }));
+    root.querySelectorAll('[data-act="export-tokens-tailwind"]').forEach(b=>b.addEventListener('click',()=>{ cp(exportTokensTailwind()); }));
+    root.querySelectorAll('[data-act="export-tokens-json"]').forEach(b=>b.addEventListener('click',()=>{ cp(exportTokensJSON()); }));
     root.querySelectorAll('[data-act="goto-img"]').forEach(b=>b.addEventListener('click',()=>{
       const idx=parseInt(b.dataset.idx); const img=auditData?.images[idx]?.el; if(img) img.scrollIntoView({behavior:'smooth',block:'center'});
     }));
