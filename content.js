@@ -7,8 +7,10 @@
   let cssText = null; // Cached CSS text
   let panelPos = { x: null, y: null }; // Saved drag position
   const colorSwaps = new Map(); // oldHex → { newHex, originals: [{el, prop, orig}] }
+  const colorDisabled = new Map(); // hex → [{el, cssProp, orig}] — hidden colors
   let auditData = null; // Cached audit results
   let seoData = null; // Cached SEO scan results
+  let colorHighlightMode = false; // Toggle for hover-to-highlight colors on page
 
   /* ── Icons ──────────────────────────────────────────── */
   const IC = {
@@ -598,8 +600,8 @@
     // Palette
     const cols = sorted(data.colors,12);
     if (cols.length) {
-      h += '<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Color Palette</span></div><div class="uii-sec-body"><div class="uii-palette-row">';
-      cols.slice(0,10).forEach(([c])=>{ h += `<div class="uii-palette-dot" style="background:${c}" title="${up(c)}" onclick="navigator.clipboard.writeText('${up(c)}')"></div>`; });
+      h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Color Palette</span><div class="uii-hl-toggle" data-act="toggle-color-highlight" title="Highlight elements on hover"><div class="uii-mini-sw ${colorHighlightMode?'uii-mini-sw--on':''}"></div><span class="uii-hl-toggle-label">Highlight</span></div></div><div class="uii-sec-body"><div class="uii-palette-row">`;
+      cols.slice(0,10).forEach(([c])=>{ h += `<div class="uii-palette-dot" style="background:${c}" title="${up(c)}" data-color="${c}"></div>`; });
       if (data.colors.size>10) h += '<button class="uii-show-all" data-tab="colors">Show all</button>';
       h += '</div></div></div>';
     }
@@ -641,7 +643,7 @@
 
   /* ── Colors ──────────────────────────────────────────── */
   function tabColors() {
-    let h = `<div class="uii-color-hdr"><span class="uii-sec-title">Colors <span class="uii-count">${data.colors.size}</span></span><div style="display:flex;gap:6px"><button class="uii-btn-outline" data-act="reset-colors">Reset All</button><button class="uii-btn-outline" data-act="export-colors">Export</button></div></div>`;
+    let h = `<div class="uii-color-hdr"><span class="uii-sec-title">Colors <span class="uii-count">${data.colors.size}</span></span><div style="display:flex;gap:8px;align-items:center"><button class="uii-btn-outline" data-act="reset-colors">Reset All</button><button class="uii-btn-outline" data-act="export-colors">Export</button></div></div><div class="uii-color-hl-row"><div class="uii-hl-toggle" data-act="toggle-color-highlight" title="Highlight elements on hover"><div class="uii-mini-sw ${colorHighlightMode?'uii-mini-sw--on':''}"></div><span class="uii-hl-toggle-label">Highlight elements on hover</span></div></div>`;
     h += `<div class="uii-pills"><button class="uii-pill ${colorView==='palette'?'uii-pill--on':''}" data-cview="palette">Palette</button><button class="uii-pill ${colorView==='categories'?'uii-pill--on':''}" data-cview="categories">Categories</button></div>`;
 
     if (colorView === 'palette') {
@@ -668,19 +670,28 @@
       const currentColor = swapped ? colorSwaps.get(c).newHex : c;
       const currentTc = contrast(currentColor);
       const hasAlpha = currentColor.length === 9;
-      const alphaVal = hasAlpha ? Math.round(parseInt(currentColor.slice(7,9),16)/255*100) : 100;
-      const alphaTag = hasAlpha ? ` <span class="uii-cb-alpha">${alphaVal}%</span>` : '';
+      const alphaVal = hasAlpha ? parseFloat((parseInt(currentColor.slice(7,9),16)/255).toFixed(2)) : 1;
+      const alphaTag = hasAlpha ? ` <span class="uii-cb-alpha">${alphaVal}</span>` : '';
       const alphaHex = hasAlpha ? currentColor.slice(7,9) : 'ff';
       const alphaInt = parseInt(alphaHex,16);
-      h += `<div class="uii-color-band-wrap">
-        <div class="uii-color-band" style="background:${currentColor};color:${currentTc}" data-color="${c}">
+      const isOff = colorDisabled.has(c);
+      const bandBgStyle = isOff
+        ? 'background:transparent;border:1px dashed rgba(150,150,150,.3)'
+        : hasAlpha
+          ? `background:linear-gradient(${hexToCSS(currentColor)},${hexToCSS(currentColor)}),repeating-conic-gradient(rgba(255,255,255,.12) 0% 25%,rgba(0,0,0,.12) 0% 50%) 0 0/12px 12px`
+          : `background:${currentColor}`;
+      h += `<div class="uii-color-band-wrap${isOff ? ' uii-cb-disabled' : ''}">
+        <div class="uii-color-band" style="${bandBgStyle};color:${isOff ? '#888' : currentTc}" data-color="${c}">
           <div class="uii-cb-top">
-            <span class="uii-cb-hex">${up(currentColor)}${alphaTag}${swapped ? ` <span class="uii-cb-orig">(was ${up(c)})</span>` : ''}</span>
+            <span class="uii-cb-hex"${isOff ? ' style="text-decoration:line-through;opacity:.5"' : ''}>${up(currentColor)}${alphaTag}${swapped ? ` <span class="uii-cb-orig">(was ${up(c)})</span>` : ''}</span>
             <div class="uii-cb-controls">
+              <div class="uii-cb-toggle" data-toggle-color="${c}" title="${isOff ? 'Show' : 'Hide'} this color on page">
+                <div class="uii-mini-sw ${isOff ? '' : 'uii-mini-sw--on'}"></div>
+              </div>
               <label class="uii-color-trigger" title="Change color">
                 <input type="color" class="uii-color-input" value="${hex6(currentColor)}" data-orig="${c}">
               </label>
-              <input type="range" class="uii-alpha-slider" min="0" max="255" value="${alphaInt}" data-orig="${c}" title="Alpha: ${alphaVal}%">
+              <input type="range" class="uii-alpha-slider" min="0" max="255" value="${alphaInt}" data-orig="${c}" title="Alpha: ${alphaVal}">
             </div>
           </div>
           <span class="uii-cb-count">${n} instance${n !== 1 ? 's' : ''}</span>
@@ -730,6 +741,74 @@
 
   function revertAllColors() {
     for (const key of [...colorSwaps.keys()]) revertColor(key);
+    for (const key of [...colorDisabled.keys()]) showColor(key);
+  }
+
+  /* ── Color On/Off Toggle ───────────────────────────────── */
+  function hideColor(targetHex) {
+    if (colorDisabled.has(targetHex)) return;
+    const target6 = hex6(targetHex).toLowerCase();
+    const originals = [];
+    const props = ['color','backgroundColor','borderColor','outlineColor','boxShadow'];
+    document.querySelectorAll('*').forEach(el => {
+      if (own(el)) return;
+      const cs = getComputedStyle(el);
+      props.forEach(prop => {
+        const val = cs[prop];
+        if (!val || val === 'rgba(0, 0, 0, 0)' || val === 'transparent' || val === 'none') return;
+        const matched = prop === 'boxShadow' ? hex6(hex(val)).toLowerCase() === target6 : hex6(hex(val)).toLowerCase() === target6;
+        if (matched) {
+          const cssProp = prop.replace(/([A-Z])/g, '-$1').toLowerCase();
+          const orig = el.style.getPropertyValue(cssProp);
+          originals.push({ el, cssProp, orig });
+          el.style.setProperty(cssProp, 'transparent', 'important');
+        }
+      });
+    });
+    colorDisabled.set(targetHex, originals);
+  }
+
+  function showColor(targetHex) {
+    const entries = colorDisabled.get(targetHex);
+    if (!entries) return;
+    entries.forEach(({ el, cssProp, orig }) => {
+      if (orig) el.style.setProperty(cssProp, orig);
+      else el.style.removeProperty(cssProp);
+    });
+    colorDisabled.delete(targetHex);
+  }
+
+  function toggleColor(targetHex) {
+    if (colorDisabled.has(targetHex)) showColor(targetHex);
+    else hideColor(targetHex);
+  }
+
+  /* ── Color Highlight on Hover ───────────────────────────── */
+  function highlightColorOnPage(targetHex) {
+    clearColorHighlights();
+    const target6 = hex6(targetHex).toLowerCase();
+    const props = ['color', 'backgroundColor', 'borderColor'];
+    document.querySelectorAll('*').forEach(el => {
+      if (own(el) || !vis(el)) return;
+      const cs = getComputedStyle(el);
+      const matchedProps = [];
+      props.forEach(p => {
+        const v = cs[p];
+        if (!v || v === 'rgba(0, 0, 0, 0)' || v === 'transparent') return;
+        if (hex6(hex(v)).toLowerCase() === target6) matchedProps.push(p);
+      });
+      if (!matchedProps.length) return;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return;
+      const d = document.createElement('div');
+      d.className = 'uii-color-highlight';
+      d.style.cssText = `position:absolute;top:${r.top+window.scrollY}px;left:${r.left+window.scrollX}px;width:${r.width}px;height:${r.height}px;border:2px solid ${targetHex};background:${targetHex}20;z-index:2147483645;pointer-events:none;border-radius:3px;`;
+      document.body.appendChild(d);
+    });
+  }
+
+  function clearColorHighlights() {
+    document.querySelectorAll('.uii-color-highlight').forEach(e => e.remove());
   }
 
   /* ── Typography ──────────────────────────────────────── */
@@ -873,6 +952,115 @@
   function exportTokensJSON() {
     const t = getTokenData();
     return JSON.stringify({ source: location.href, extractedAt: new Date().toISOString(), tokens: t }, null, 2);
+  }
+
+  /* ── Tech Stack Detection ──────────────────────────── */
+  function detectTechStack() {
+    const stack = [];
+    // MUI / Material UI
+    if (document.querySelector('[class*="Mui"], [class*="css-"][class*="Mui"], .MuiBox-root, .MuiButton-root') || document.querySelector('style[data-emotion]'))
+      stack.push('mui');
+    // Tailwind
+    if (document.querySelector('[class*="tw-"], [class*="bg-"], [class*="text-"]') && document.querySelector('style')?.textContent?.includes('--tw-'))
+      stack.push('tailwind');
+    // Bootstrap
+    if (document.querySelector('.container, .row, .col, .btn') && (document.querySelector('link[href*="bootstrap"]') || document.querySelector('style')?.textContent?.includes('--bs-')))
+      stack.push('bootstrap');
+    // Chakra UI
+    if (document.querySelector('[class*="chakra-"]') || document.querySelector('style[data-emotion="css"]')?.textContent?.includes('chakra'))
+      stack.push('chakra');
+    // Ant Design
+    if (document.querySelector('.ant-btn, .ant-table, [class*="ant-"]'))
+      stack.push('antd');
+    return stack;
+  }
+
+  function hexToRgb(h) {
+    const c = hex6(h).replace('#','');
+    return { r: parseInt(c.slice(0,2),16), g: parseInt(c.slice(2,4),16), b: parseInt(c.slice(4,6),16) };
+  }
+
+  function hexAlphaToFloat(h) {
+    if (h.length !== 9) return 1;
+    return parseFloat((parseInt(h.slice(7,9),16)/255).toFixed(2));
+  }
+
+  function buildMuiPalette(colors) {
+    // Group colors by base hex (strip alpha) and sort by usage
+    const baseMap = new Map();
+    colors.forEach(([c, n]) => {
+      const base = hex6(c);
+      const alpha = c.length === 9 ? hexAlphaToFloat(c) : 1;
+      if (!baseMap.has(base)) baseMap.set(base, { count: 0, alphas: [] });
+      const entry = baseMap.get(base);
+      entry.count += n;
+      if (alpha < 1) entry.alphas.push({ alpha, hex: c, count: n });
+    });
+
+    // Build palette structure
+    const palette = { primary: {}, secondary: {}, background: {}, text: {}, grey: {}, divider: '', action: {} };
+    const catColors = data ? data.colorsByCategory : null;
+    const textColors = catColors ? sorted(catColors.text, 10) : [];
+    const bgColors = catColors ? sorted(catColors.background, 10) : [];
+
+    // Detect primary (most used non-grey, non-white, non-black color)
+    const isNeutral = h => { const {r,g,b} = hexToRgb(h); return Math.abs(r-g)<20 && Math.abs(g-b)<20; };
+    const chromatic = [...baseMap.entries()].filter(([h]) => !isNeutral(h) && h.length <= 7).sort((a,b) => b[1].count - a[1].count);
+    if (chromatic[0]) palette.primary.main = chromatic[0][0];
+    if (chromatic[1]) palette.secondary.main = chromatic[1][0];
+
+    // Background colors
+    if (bgColors.length) {
+      palette.background.default = hex6(bgColors[0][0]);
+      if (bgColors[1]) palette.background.paper = hex6(bgColors[1][0]);
+    }
+
+    // Text colors
+    if (textColors.length) {
+      palette.text.primary = hex6(textColors[0][0]);
+      if (textColors[1]) palette.text.secondary = hex6(textColors[1][0]);
+      const disabled = textColors.find(([c]) => c.length === 9 && hexAlphaToFloat(c) < 0.6);
+      if (disabled) palette.text.disabled = hex6(disabled[0]);
+    }
+
+    // Grey scale — find neutrals
+    const greys = [...baseMap.entries()].filter(([h]) => isNeutral(h)).sort((a,b) => {
+      const la = lum(a[0]), lb = lum(b[0]); return lb - la;
+    }).map(([h]) => h);
+    const greySteps = ['50','100','200','300','400','500','600','700','800','900'];
+    greys.slice(0, 10).forEach((g, i) => { if (i < greySteps.length) palette.grey[greySteps[i]] = g; });
+
+    // Divider — look for low-alpha grey
+    const dividerCand = colors.find(([c]) => c.length === 9 && isNeutral(hex6(c)) && hexAlphaToFloat(c) < 0.3 && hexAlphaToFloat(c) > 0.05);
+    if (dividerCand) {
+      const a = hexAlphaToFloat(dividerCand[0]);
+      palette.divider = `alpha('${hex6(dividerCand[0])}', ${a})`;
+    }
+
+    // Action — hover/selected from alpha colors
+    const actionAlphas = colors.filter(([c]) => c.length === 9).sort((a,b) => hexAlphaToFloat(a[0]) - hexAlphaToFloat(b[0]));
+    const hoverCand = actionAlphas.find(([c]) => { const a = hexAlphaToFloat(c); return a >= 0.04 && a <= 0.12; });
+    const selectedCand = actionAlphas.find(([c]) => { const a = hexAlphaToFloat(c); return a >= 0.12 && a <= 0.24; });
+    if (hoverCand) palette.action.hover = `alpha('${hex6(hoverCand[0])}', ${hexAlphaToFloat(hoverCand[0])})`;
+    if (selectedCand) palette.action.selected = `alpha('${hex6(selectedCand[0])}', ${hexAlphaToFloat(selectedCand[0])})`;
+
+    return palette;
+  }
+
+  function exportTokensMUI() {
+    const t = getTokenData();
+    const allColors = sorted(data.colors, 200);
+    const palette = buildMuiPalette(allColors);
+
+    // Clean out empty keys
+    const clean = obj => { const o = {}; for (const [k,v] of Object.entries(obj)) { if (v && typeof v === 'object' && !Array.isArray(v)) { const c = clean(v); if (Object.keys(c).length) o[k] = c; } else if (v !== '' && v !== undefined) { o[k] = v; } } return o; };
+    const pal = clean(palette);
+
+    let code = `// MUI createTheme — extracted by UI Inspector\n`;
+    code += `// Source: ${location.href}\n`;
+    code += `import { createTheme, alpha } from '@mui/material/styles';\n\n`;
+    code += `const theme = createTheme({\n  palette: ${JSON.stringify(pal, null, 4).replace(/"alpha\('([^']+)',\s*([0-9.]+)\)"/g, "alpha('$1', $2)")}\n});\n\nexport default theme;\n`;
+    return code;
   }
 
   function auditSkeleton() {
@@ -1030,9 +1218,19 @@
       h += `</div></div>`;
     }
 
+    // — Detected Tech Stack —
+    const techStack = detectTechStack();
+    if (techStack.length) {
+      h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Detected Stack</span></div><div class="uii-sec-body"><div class="uii-tech-badges">`;
+      const labels = { mui: 'MUI / Material UI', tailwind: 'Tailwind CSS', bootstrap: 'Bootstrap', chakra: 'Chakra UI', antd: 'Ant Design' };
+      techStack.forEach(t => { h += `<span class="uii-tech-badge">${labels[t] || t}</span>`; });
+      h += `</div></div></div>`;
+    }
+
     // — Export Design Tokens —
     h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Export Design Tokens</span></div><div class="uii-sec-body">`;
     h += `<div class="uii-token-btns">`;
+    if (techStack.includes('mui')) h += `<button class="uii-btn-outline uii-btn-primary" data-act="export-tokens-mui">MUI Theme</button>`;
     h += `<button class="uii-btn-outline" data-act="export-tokens-css">CSS Variables</button>`;
     h += `<button class="uii-btn-outline" data-act="export-tokens-tailwind">Tailwind Config</button>`;
     h += `<button class="uii-btn-outline" data-act="export-tokens-json">JSON</button>`;
@@ -1283,7 +1481,7 @@
     }
     shadow = null;
     revertAllColors();
-    clearDims(); stopPick();
+    clearDims(); stopPick(); clearColorHighlights();
     document.querySelectorAll('.uii-cls-highlight').forEach(e=>e.remove());
     auditData = null;
     seoData = null;
@@ -1321,6 +1519,25 @@
     });
     root.querySelectorAll('[data-reset]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); revertColor(b.dataset.reset); render(); }));
     root.querySelectorAll('[data-act="reset-colors"]').forEach(b=>b.addEventListener('click',()=>{ revertAllColors(); render(); }));
+    // Color highlight toggle
+    root.querySelectorAll('[data-act="toggle-color-highlight"]').forEach(b => b.addEventListener('click', () => {
+      colorHighlightMode = !colorHighlightMode;
+      if (!colorHighlightMode) clearColorHighlights();
+      render();
+    }));
+    // Color highlight on hover — palette dots (overview) and color bands (colors tab)
+    root.querySelectorAll('.uii-palette-dot[data-color]').forEach(dot => {
+      dot.addEventListener('mouseenter', () => { if (colorHighlightMode) highlightColorOnPage(dot.dataset.color); });
+      dot.addEventListener('mouseleave', () => { if (colorHighlightMode) clearColorHighlights(); });
+      dot.addEventListener('click', () => { navigator.clipboard.writeText(up(dot.dataset.color)); toast('Copied'); });
+    });
+    root.querySelectorAll('.uii-color-band[data-color]').forEach(band => {
+      band.addEventListener('mouseenter', () => { if (colorHighlightMode) highlightColorOnPage(band.dataset.color); });
+      band.addEventListener('mouseleave', () => { if (colorHighlightMode) clearColorHighlights(); });
+    });
+    root.querySelectorAll('.uii-cb-toggle[data-toggle-color]').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); toggleColor(btn.dataset.toggleColor); render(); });
+    });
     root.querySelectorAll('.uii-copy-prompt-btn').forEach(b=>b.addEventListener('click',()=>{ cp(b.dataset.prompt); }));
     // Audit tab events
     root.querySelectorAll('[data-act="run-audit"]').forEach(b=>b.addEventListener('click',async()=>{ auditData='loading'; render(); await runAudit(); render(); }));
@@ -1346,6 +1563,7 @@
     root.querySelectorAll('[data-act="rescan-seo"]').forEach(b=>b.addEventListener('click',()=>{ seoData = 'loading'; render(); setTimeout(()=>{ seoData = null; render(); }, 600); }));
     root.querySelectorAll('.uii-seo-group-copy').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
     root.querySelectorAll('.uii-seo-issue-copy').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
+    root.querySelectorAll('[data-act="export-tokens-mui"]').forEach(b=>b.addEventListener('click',()=>{ cp(exportTokensMUI()); }));
     root.querySelectorAll('[data-act="export-tokens-css"]').forEach(b=>b.addEventListener('click',()=>{ cp(exportTokensCSS()); }));
     root.querySelectorAll('[data-act="export-tokens-tailwind"]').forEach(b=>b.addEventListener('click',()=>{ cp(exportTokensTailwind()); }));
     root.querySelectorAll('[data-act="export-tokens-json"]').forEach(b=>b.addEventListener('click',()=>{ cp(exportTokensJSON()); }));
