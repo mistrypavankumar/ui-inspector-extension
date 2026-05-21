@@ -10,7 +10,31 @@
   const colorDisabled = new Map(); // hex → [{el, cssProp, orig}] — hidden colors
   let auditData = null; // Cached audit results
   let seoData = null; // Cached SEO scan results
+  let layoutData = null; // Cached layout-overflow scan results
   let colorHighlightMode = false; // Toggle for hover-to-highlight colors on page
+
+  /* ── Markup state ────────────────────────────────────── */
+  const MK_SVG_ID = 'uii-mk-svg';
+  const MK_TB_ID = 'uii-mk-toolbar';
+  const MK_COLORS = ['#FF3B30','#FF9500','#FFCC00','#34C759','#007AFF','#5856D6','#AF52DE','#1A1A2E','#FFFFFF'];
+  let markupActive = false;
+  let markupTool = 'pencil';
+  let markupColor = '#FF3B30';
+  let markupStrokeWidth = 3;
+  let markupFontSize = 16;
+  const MK_FONT_PRESETS = [12, 16, 20, 28];
+  let markupSvg = null;
+  let markupCurrent = null; // The shape element currently being drawn
+  let markupStart = null;   // {x,y} starting point
+  let markupPath = '';      // For pencil tool
+  let markupTbHost = null;
+  let markupTbShadow = null;
+  let markupTextEditor = null;
+  let markupInspectorVisible = true; // While in markup, is the inspector panel shown?
+  let markupCaptures = []; // [{ id, timestamp, dataUrl }] — persisted to chrome.storage.local
+  let markupCapturesLoaded = false;
+  const MK_CAP_KEY = 'uii_markup_captures';
+  const MK_CAP_LIMIT = 20;
 
   /* ── Icons ──────────────────────────────────────────── */
   const IC = {
@@ -30,6 +54,17 @@
     warn:'<svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>',
     check:'<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>',
     seo:'<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>',
+    layout:'<svg viewBox="0 0 24 24"><path d="M3 3v18h2V5h14v16h2V3H3zm4 4v2h10V7H7zm0 4v2h10v-2H7zm0 4v4h6v-4H7z"/></svg>',
+    markup:'<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>',
+    pencil:'<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>',
+    rect:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="5" width="16" height="14" rx="1"/></svg>',
+    ellipse:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="9" ry="7"/></svg>',
+    arrow:'<svg viewBox="0 0 24 24"><path d="M4.5 19.5L18 6m0 0H8.5M18 6v9.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    textIcon:'<svg viewBox="0 0 24 24"><path d="M5 4v3h5.5v12h3V7H19V4z"/></svg>',
+    trash:'<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>',
+    camera:'<svg viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zm9-9h-3.17l-1.83-2H8L6.17 6.2H3a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2v-11a2 2 0 0 0-2-2zM12 17a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/></svg>',
+    eye:'<svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>',
+    eyeOff:'<svg viewBox="0 0 24 24"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92A11.83 11.83 0 0 0 23 12c-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-4 .7l2.17 2.15A4.94 4.94 0 0 1 12 7zM2 4.27l2.28 2.28A11.83 11.83 0 0 0 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l3.05 3.05 1.41-1.41L3.41 2.86 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>',
   };
 
   /* ── Util ────────────────────────────────────────────── */
@@ -40,7 +75,7 @@
   const lum = h => { const c=hex6(h); if (!c.startsWith('#') || c.length < 7) return 0; const r=parseInt(c.slice(1,3),16), g=parseInt(c.slice(3,5),16), b=parseInt(c.slice(5,7),16); return (0.299*r+0.587*g+0.114*b)/255; };
   const contrast = h => lum(h) > 0.5 ? '#111' : '#fff';
   const vis = el => { const s=getComputedStyle(el); return s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0'; };
-  const own = el => el.closest('#'+ROOT)||el.id===ROOT||el.id===OV_ID||el.id===TT_ID||el.closest('#'+TT_ID)||el.classList?.contains('uii-dim-label');
+  const own = el => el.closest('#'+ROOT)||el.id===ROOT||el.id===OV_ID||el.id===TT_ID||el.closest('#'+TT_ID)||el.id===MK_SVG_ID||el.closest('#'+MK_SVG_ID)||el.id===MK_TB_ID||el.closest('#'+MK_TB_ID)||el.classList?.contains('uii-dim-label')||el.classList?.contains('uii-mk-text-input');
   const sides = v => { if(!v||v==='0px') return [0,0,0,0]; const p=v.split(' ').map(x=>parseInt(x)||0); return p.length===1?[p[0],p[0],p[0],p[0]]:p.length===2?[p[0],p[1],p[0],p[1]]:p.length===3?[p[0],p[1],p[2],p[1]]:[p[0],p[1],p[2],p[3]]; };
   const wn = w => ({'100':'Thin','200':'Extra Light','300':'Light','400':'Regular','500':'Medium','600':'Semi Bold','700':'Bold','800':'Extra Bold','900':'Black'}[w]||'');
   const wname = w => { const n = wn(w); return n ? n+' ('+w+')' : w; };
@@ -345,6 +380,101 @@
     return { issues, totalChecked, grid };
   }
 
+  /* ── Layout Overflow Scanner ─────────────────────────── */
+  function scanLayoutOverflow() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const docEl = document.documentElement;
+    const body = document.body;
+    const pageScrollH = Math.max(docEl.scrollHeight, body.scrollHeight);
+    const pageScrollW = Math.max(docEl.scrollWidth, body.scrollWidth);
+    const pageOverflowY = pageScrollH - vh;
+    const pageOverflowX = pageScrollW - vw;
+
+    const selectorOf = (el) => {
+      const tag = el.tagName.toLowerCase();
+      const cls = Array.from(el.classList).filter(c => !c.startsWith('uii-')).slice(0, 2);
+      return tag + cls.map(c => '.' + c).join('');
+    };
+
+    // Culprits: elements whose bottom edge extends past the viewport.
+    const culprits = [];
+    document.querySelectorAll('body *').forEach(el => {
+      if (own(el) || !vis(el)) return;
+      const r = el.getBoundingClientRect();
+      if (r.height < 80) return;
+      if (r.bottom > vh + 2) {
+        const cs = getComputedStyle(el);
+        culprits.push({
+          el,
+          selector: selectorOf(el),
+          tag: el.tagName.toLowerCase(),
+          height: Math.round(r.height),
+          offsetTop: Math.round(r.top + window.scrollY),
+          bottomDelta: Math.round(r.bottom - vh),
+          cssHeight: cs.height,
+          cssMinHeight: cs.minHeight,
+          overflowY: cs.overflowY,
+        });
+      }
+    });
+    culprits.sort((a, b) => b.bottomDelta - a.bottomDelta);
+
+    // Internal scroll containers actually scrolling.
+    const containers = [];
+    document.querySelectorAll('*').forEach(el => {
+      if (own(el) || !vis(el)) return;
+      const cs = getComputedStyle(el);
+      if (['auto', 'scroll'].includes(cs.overflowY) && el.scrollHeight - el.clientHeight > 1) {
+        containers.push({ el, selector: selectorOf(el), axis: 'y', delta: Math.round(el.scrollHeight - el.clientHeight) });
+      }
+      if (['auto', 'scroll'].includes(cs.overflowX) && el.scrollWidth - el.clientWidth > 1) {
+        containers.push({ el, selector: selectorOf(el), axis: 'x', delta: Math.round(el.scrollWidth - el.clientWidth) });
+      }
+    });
+    containers.sort((a, b) => b.delta - a.delta);
+
+    return {
+      page: {
+        overflowY: Math.round(pageOverflowY),
+        overflowX: Math.round(pageOverflowX),
+        vw: Math.round(vw),
+        vh: Math.round(vh),
+        scrollHeight: Math.round(pageScrollH),
+        scrollWidth: Math.round(pageScrollW),
+      },
+      culprits: culprits.slice(0, 10),
+      containers: containers.slice(0, 15),
+    };
+  }
+
+  function buildLayoutPrompt(L) {
+    let p = `Fix layout overflow issues on this page:\n\n`;
+    p += `Viewport: ${L.page.vw} x ${L.page.vh}px (scrollable area: ${L.page.scrollWidth} x ${L.page.scrollHeight}px)\n`;
+    if (L.page.overflowY > 0) p += `- Page vertical overflow: ${L.page.overflowY}px (unwanted scrollbar)\n`;
+    if (L.page.overflowX > 0) p += `- Page horizontal overflow: ${L.page.overflowX}px (unwanted scrollbar)\n`;
+    if (L.page.overflowY <= 0 && L.page.overflowX <= 0) p += `- Page fits viewport (no body-level overflow detected)\n`;
+    if (L.culprits.length) {
+      p += `\nElements extending past the viewport (sorted by overflow):\n`;
+      L.culprits.forEach((c, i) => {
+        p += `${i + 1}. ${c.selector} — top:${c.offsetTop}px, height:${c.height}px (computed: ${c.cssHeight}), ${c.bottomDelta}px over viewport\n`;
+      });
+    }
+    if (L.containers.length) {
+      p += `\nScroll containers that are currently scrolling:\n`;
+      L.containers.forEach((c, i) => {
+        p += `${i + 1}. ${c.selector} — ${c.axis.toUpperCase()}-axis, ${c.delta}px overflow\n`;
+      });
+    }
+    p += `\nCommon fixes:\n`;
+    p += `- If a container uses calc(100dvh - N) or calc(100vh - N), increase N to cover ALL chrome above it (app header + page header margins + flex/grid gaps + container padding).\n`;
+    p += `- Check for double-applied padding when wrappers are nested (e.g., parent pb:3 + inner pb:3 = 48px).\n`;
+    p += `- For horizontal overflow, add min-width:0 on flex/grid items or overflow-x:hidden on wide tables/images.\n`;
+    p += `- For unexpected internal scroll, verify the container has the intended height — it may be shorter than its content by the same delta reported above.\n\n`;
+    p += `Please adjust the height/padding/margin rules to eliminate the overflow.`;
+    return p;
+  }
+
   /* ── SEO Scanner ─────────────────────────────────────── */
   function scanSEO() {
     const issues = [];
@@ -519,16 +649,19 @@
     let h = '';
     h += topbar();
     h += '<div class="uii-content">';
-    if (tab==='overview') h += tabOverview();
+    if (markupActive) {
+      h += tabMarkup();
+    } else if (tab==='overview') h += tabOverview();
     else if (tab==='colors') h += tabColors();
     else if (tab==='typography') h += tabTypo();
     else if (tab==='assets') h += tabAssets();
     else if (tab==='audit') h += tabAudit();
+    else if (tab==='layout') h += tabLayout();
     else if (tab==='seo') h += tabSEO();
     else if (tab==='inspector') h += tabInspEmpty();
     else if (tab==='inspector-detail') h += tabInspDetail();
     h += '</div>';
-    h += tabbar();
+    if (!markupActive) h += tabbar();
 
     loadCSS().then(css => {
       const scrollEl = shadow.querySelector('.uii-content');
@@ -577,12 +710,96 @@
   }
 
   function topbar() {
-    return `<div class="uii-topbar"><div class="uii-topbar-left"><div class="uii-drag-dots">${'<span></span>'.repeat(6)}</div><div class="uii-toggle"></div><span class="uii-topbar-label">Inspect Mode</span></div><div class="uii-topbar-right"><button class="uii-icon-btn">${IC.menu}</button><button class="uii-icon-btn" data-act="close">${IC.close}</button></div></div>`;
+    const label = markupActive ? 'Markup Mode' : 'Inspect Mode';
+    const btnRight = markupActive
+      ? `<button class="uii-icon-btn uii-markup-btn uii-markup-btn--on" data-act="exit-markup" title="Exit markup">${IC.markup}</button>`
+      : `<button class="uii-icon-btn uii-markup-btn" data-act="markup" title="Markup mode">${IC.markup}</button>`;
+    return `<div class="uii-topbar"><div class="uii-topbar-left"><div class="uii-drag-dots">${'<span></span>'.repeat(6)}</div><div class="uii-toggle"></div><span class="uii-topbar-label">${label}</span></div><div class="uii-topbar-right">${btnRight}<button class="uii-icon-btn">${IC.menu}</button><button class="uii-icon-btn" data-act="close">${IC.close}</button></div></div>`;
   }
 
   function tabbar() {
     const t = (id,icon,label) => `<button class="uii-tab ${(tab===id||(tab==='inspector-detail'&&id==='inspector'))?'uii-tab--on':''}" data-tab="${id}">${icon}<span class="uii-tab-lbl">${label}</span></button>`;
-    return `<div class="uii-tabbar">${t('overview',IC.grid,'Overview')}${t('colors',IC.drop,'Colors')}${t('typography',IC.type,'Type')}${t('assets',IC.image,'Assets')}${t('audit',IC.audit,'Audit')}${t('seo',IC.seo,'SEO')}${t('inspector',IC.target,'Inspect')}</div>`;
+    return `<div class="uii-tabbar">${t('overview',IC.grid,'Overview')}${t('colors',IC.drop,'Colors')}${t('typography',IC.type,'Type')}${t('assets',IC.image,'Assets')}${t('audit',IC.audit,'Audit')}${t('layout',IC.layout,'Layout')}${t('seo',IC.seo,'SEO')}${t('inspector',IC.target,'Inspect')}</div>`;
+  }
+
+  /* ── Markup Mode View ────────────────────────────────── */
+  const MK_TOOL_LABELS = { pencil:'Pencil', rect:'Rectangle', ellipse:'Ellipse', arrow:'Arrow', text:'Text' };
+  const MK_TOOL_ICONS = () => ({ pencil:IC.pencil, rect:IC.rect, ellipse:IC.ellipse, arrow:IC.arrow, text:IC.textIcon });
+  function fmtTime(ts) {
+    const d = new Date(ts);
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    const time = d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    return sameDay ? time : d.toLocaleDateString() + ' ' + time;
+  }
+  function tabMarkup() {
+    const icons = MK_TOOL_ICONS();
+    let h = '';
+    // Hero / status
+    h += `<div class="uii-mk-hero">`;
+    h += `<div class="uii-mk-hero-title">Annotate this page</div>`;
+    h += `<div class="uii-mk-hero-sub">Draw, label, and capture findings without leaving the tab.</div>`;
+    h += `<div class="uii-mk-status">`;
+    h += `<div class="uii-mk-status-item"><div class="uii-mk-status-lbl">Tool</div><div class="uii-mk-status-val"><span class="uii-mk-status-icon">${icons[markupTool] || ''}</span>${MK_TOOL_LABELS[markupTool] || markupTool}</div></div>`;
+    h += `<div class="uii-mk-status-item"><div class="uii-mk-status-lbl">Color</div><div class="uii-mk-status-val"><span class="uii-mk-status-sw" style="background:${markupColor}${markupColor==='#FFFFFF'?';border:1px solid rgba(0,0,0,.15)':''}"></span>${markupColor}</div></div>`;
+    if (markupTool === 'text') {
+      h += `<div class="uii-mk-status-item"><div class="uii-mk-status-lbl">Font size</div><div class="uii-mk-status-val">${markupFontSize}px</div></div>`;
+    } else {
+      h += `<div class="uii-mk-status-item"><div class="uii-mk-status-lbl">Stroke</div><div class="uii-mk-status-val">${markupStrokeWidth}px</div></div>`;
+    }
+    h += `</div>`;
+    h += `<div class="uii-mk-hero-actions"><button class="uii-btn-outline uii-btn-accent" data-act="mk-capture">Capture Screenshot</button><button class="uii-btn-outline" data-act="mk-clear-canvas">Clear Drawing</button></div>`;
+    h += `</div>`;
+
+    // Captures gallery
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Captures <span class="uii-count">${markupCaptures.length}</span></span>`;
+    if (markupCaptures.length) h += `<button class="uii-btn-outline uii-btn-sm" data-act="mk-clear-captures">Clear All</button>`;
+    h += `</div><div class="uii-sec-body">`;
+    if (!markupCaptures.length) {
+      h += `<div class="uii-mk-empty">No captures yet. Annotate the page and click the camera icon in the toolbar to save a screenshot.</div>`;
+    } else {
+      markupCaptures.forEach(c => {
+        h += `<div class="uii-mk-cap" data-cap-id="${c.id}">`;
+        h += `<div class="uii-mk-cap-thumb" data-act="mk-preview" data-cap-id="${c.id}"><img src="${c.dataUrl}" loading="lazy"></div>`;
+        h += `<div class="uii-mk-cap-info">`;
+        h += `<div class="uii-mk-cap-time">${fmtTime(c.timestamp)}</div>`;
+        h += `<div class="uii-mk-cap-actions">`;
+        h += `<button class="uii-mk-cap-btn" data-act="mk-cap-copy" data-cap-id="${c.id}" title="Copy to clipboard">${IC.copy}</button>`;
+        h += `<button class="uii-mk-cap-btn" data-act="mk-cap-download" data-cap-id="${c.id}" title="Download">${IC.dl}</button>`;
+        h += `<button class="uii-mk-cap-btn" data-act="mk-cap-delete" data-cap-id="${c.id}" title="Delete">${IC.trash}</button>`;
+        h += `</div></div></div>`;
+      });
+    }
+    h += `</div></div>`;
+
+    h += `<div class="uii-mk-foot"><button class="uii-empty-btn" data-act="exit-markup">Exit Markup Mode</button></div>`;
+    return h;
+  }
+
+  async function copyCapture(id) {
+    const c = markupCaptures.find(x => x.id === id);
+    if (!c) return;
+    try {
+      const blob = await (await fetch(c.dataUrl)).blob();
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      toast('Copied to clipboard');
+    } catch (e) { toast('Copy failed'); }
+  }
+
+  function downloadCapture(id) {
+    const c = markupCaptures.find(x => x.id === id);
+    if (!c) return;
+    const a = document.createElement('a');
+    a.href = c.dataUrl;
+    a.download = `markup-${new Date(c.timestamp).toISOString().replace(/[:.]/g,'-')}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function previewCapture(id) {
+    const c = markupCaptures.find(x => x.id === id);
+    if (!c) return;
+    const w = window.open('', '_blank');
+    if (w) w.document.write(`<title>Capture</title><body style="margin:0;background:#1a1a2e;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${c.dataUrl}" style="max-width:100%;max-height:100vh"></body>`);
   }
 
   /* ── Overview ────────────────────────────────────────── */
@@ -1086,6 +1303,76 @@
     return h;
   }
 
+  function layoutSkeleton() {
+    const bar = (w) => `<div class="uii-skeleton" style="width:${w};height:14px"></div>`;
+    const barL = (w) => `<div class="uii-skeleton" style="width:${w};height:20px"></div>`;
+    let h = `<div class="uii-audit-bar"><span class="uii-sec-title">Layout Overflow</span><button class="uii-btn-outline" disabled>Scanning...</button></div>`;
+    h += `<div class="uii-section"><div class="uii-sec-hdr">${bar('140px')}</div><div class="uii-sec-body"><div class="uii-audit-score">${barL('60px')}${bar('90px')}<div style="width:100%;margin-top:4px">${bar('160px')}</div></div></div></div>`;
+    h += `<div class="uii-section"><div class="uii-sec-hdr">${bar('150px')}${bar('40px')}</div><div class="uii-sec-body">`;
+    for (let i = 0; i < 3; i++) h += `<div style="padding:8px 0">${bar(`${180 + i * 20}px`)}<div style="margin-top:4px">${bar('140px')}</div></div>`;
+    h += `</div></div>`;
+    return h;
+  }
+
+  function tabLayout() {
+    if (layoutData === 'loading') return layoutSkeleton();
+    if (!layoutData) {
+      return `<div class="uii-empty">${IC.layout}<p>Detect layout overflow — elements whose height calculations push the body past the viewport, causing unwanted scrollbars.</p><button class="uii-empty-btn" data-act="run-layout">Run Scan</button></div>`;
+    }
+    const L = layoutData;
+    const hasIssue = L.page.overflowY > 0 || L.page.overflowX > 0 || L.culprits.length > 0;
+    let h = `<div class="uii-audit-bar"><span class="uii-sec-title">Layout Overflow</span><div style="display:flex;gap:6px">`;
+    if (hasIssue) h += `<button class="uii-btn-outline uii-btn-accent" data-act="copy-layout-prompt">Copy Prompt</button>`;
+    h += `<button class="uii-btn-outline" data-act="run-layout">Re-scan</button></div></div>`;
+
+    // Page overflow summary
+    const py = L.page.overflowY, px = L.page.overflowX;
+    const overflowMax = Math.max(py, px, 0);
+    const scoreBadge = (py <= 0 && px <= 0) ? 'uii-abadge--good' : (overflowMax > 30) ? 'uii-abadge--poor' : 'uii-abadge--warn';
+    const scoreLabel = (py <= 0 && px <= 0) ? 'Good' : (overflowMax > 30) ? 'Scrollable' : 'Slight';
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Page Overflow</span></div><div class="uii-sec-body">`;
+    h += `<div class="uii-audit-score"><span class="uii-audit-score-val">${overflowMax}<span style="font-size:14px;opacity:.6;margin-left:2px">px</span></span><span class="uii-abadge ${scoreBadge}">${scoreLabel}</span><span class="uii-audit-score-label">Viewport ${L.page.vw}×${L.page.vh}</span></div>`;
+    if (py > 0) h += `<div class="uii-audit-issue"><div class="uii-audit-issue-icon">${IC.warn}</div><div class="uii-audit-issue-body"><div class="uii-audit-issue-tag uii-atag--cls">Vertical overflow</div><div class="uii-audit-issue-fix">Page scrollHeight (${L.page.scrollHeight}px) exceeds viewport height by <strong>${py}px</strong> — browser shows a vertical scrollbar.</div></div></div>`;
+    if (px > 0) h += `<div class="uii-audit-issue"><div class="uii-audit-issue-icon">${IC.warn}</div><div class="uii-audit-issue-body"><div class="uii-audit-issue-tag uii-atag--cls">Horizontal overflow</div><div class="uii-audit-issue-fix">Page scrollWidth (${L.page.scrollWidth}px) exceeds viewport width by <strong>${px}px</strong> — browser shows a horizontal scrollbar.</div></div></div>`;
+    if (py <= 0 && px <= 0) h += `<div class="uii-audit-pass">${IC.check} Page fits within viewport</div>`;
+    h += `</div></div>`;
+
+    // Culprit elements
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Culprit Elements <span class="uii-count">${L.culprits.length}</span></span><div style="display:flex;gap:6px">`;
+    if (L.culprits.length) h += `<button class="uii-btn-outline uii-btn-sm" data-act="highlight-layout">Highlight</button>`;
+    h += `</div></div><div class="uii-sec-body">`;
+    if (L.culprits.length) {
+      h += `<div class="uii-audit-note">Elements whose bottom edge extends past the viewport — likely sources of body-level overflow.</div>`;
+      L.culprits.forEach((c, idx) => {
+        h += `<div class="uii-layout-row" data-layout-idx="${idx}">`;
+        h += `<div class="uii-layout-sel">${esc(c.selector)}</div>`;
+        h += `<div class="uii-layout-meta"><span>top <strong>${c.offsetTop}px</strong></span><span>height <strong>${c.height}px</strong></span><span class="uii-layout-over">+${c.bottomDelta}px over</span></div>`;
+        h += `<div class="uii-layout-hint">CSS height: <code>${esc(c.cssHeight)}</code>${c.cssMinHeight && c.cssMinHeight !== '0px' ? ` · min-height: <code>${esc(c.cssMinHeight)}</code>` : ''}</div>`;
+        h += `</div>`;
+      });
+    } else {
+      h += `<div class="uii-audit-pass">${IC.check} No elements extending past the viewport</div>`;
+    }
+    h += `</div></div>`;
+
+    // Scroll containers
+    h += `<div class="uii-section"><div class="uii-sec-hdr"><span class="uii-sec-title">Scroll Containers <span class="uii-count">${L.containers.length}</span></span></div><div class="uii-sec-body">`;
+    if (L.containers.length) {
+      h += `<div class="uii-audit-note">Nested containers with overflow:auto|scroll currently scrolling. Unexpected scroll here often means a child is larger than its parent.</div>`;
+      L.containers.forEach(c => {
+        h += `<div class="uii-layout-row">`;
+        h += `<div class="uii-layout-sel">${esc(c.selector)}</div>`;
+        h += `<div class="uii-layout-meta"><span>axis <strong>${c.axis.toUpperCase()}</strong></span><span class="uii-layout-over">${c.delta}px overflow</span></div>`;
+        h += `</div>`;
+      });
+    } else {
+      h += `<div class="uii-audit-pass">${IC.check} No internal scroll containers overflowing</div>`;
+    }
+    h += `</div></div>`;
+
+    return h;
+  }
+
   function tabAudit() {
     if (auditData === 'loading') return auditSkeleton();
     if (!auditData) {
@@ -1483,13 +1770,597 @@
     revertAllColors();
     clearDims(); stopPick(); clearColorHighlights();
     document.querySelectorAll('.uii-cls-highlight').forEach(e=>e.remove());
+    stopMarkup();
     auditData = null;
     seoData = null;
+  }
+
+  /* ══════════════════════════════════════════════════════
+     MARKUP MODE — annotate the page with shapes & text
+     ══════════════════════════════════════════════════════ */
+  const MK_SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /* ── Capture storage ─────────────────────────────────── */
+  function loadCaptures() {
+    return new Promise(resolve => {
+      try {
+        chrome.storage.local.get([MK_CAP_KEY], result => {
+          markupCaptures = Array.isArray(result?.[MK_CAP_KEY]) ? result[MK_CAP_KEY] : [];
+          markupCapturesLoaded = true;
+          resolve(markupCaptures);
+        });
+      } catch (e) { markupCapturesLoaded = true; resolve([]); }
+    });
+  }
+
+  function persistCaptures() {
+    try { chrome.storage.local.set({ [MK_CAP_KEY]: markupCaptures }); } catch (e) {}
+  }
+
+  function addCapture(dataUrl) {
+    const entry = { id: 'cap_' + Date.now() + '_' + Math.random().toString(36).slice(2,8), timestamp: Date.now(), dataUrl };
+    markupCaptures.unshift(entry);
+    if (markupCaptures.length > MK_CAP_LIMIT) markupCaptures.length = MK_CAP_LIMIT;
+    persistCaptures();
+    return entry;
+  }
+
+  function deleteCapture(id) {
+    markupCaptures = markupCaptures.filter(c => c.id !== id);
+    persistCaptures();
+  }
+
+  function clearAllCaptures() {
+    markupCaptures = [];
+    persistCaptures();
+  }
+
+  function startMarkup() {
+    if (markupActive) return;
+    markupActive = true;
+
+    // Show inspector panel with the markup view by default
+    markupInspectorVisible = true;
+    if (!markupCapturesLoaded) loadCaptures().then(() => { if (markupActive) render(); });
+
+    // Re-render the panel so it shows the markup view
+    render();
+    applyInspectorVisibility();
+
+    buildMarkupSvg();
+    buildMarkupToolbar();
+    document.addEventListener('keydown', onMarkupKey, true);
+    window.addEventListener('resize', resizeMarkupSvg);
+  }
+
+  function applyInspectorVisibility() {
+    const host = document.getElementById(ROOT);
+    if (!host) return;
+    // The :host rule in content.css uses `display: flex !important`, so we must
+    // match that importance to actually hide the panel.
+    if (markupInspectorVisible) {
+      host.style.removeProperty('display');
+    } else {
+      host.style.setProperty('display', 'none', 'important');
+    }
+  }
+
+  function toggleMarkupInspector() {
+    markupInspectorVisible = !markupInspectorVisible;
+    applyInspectorVisibility();
+    renderMarkupToolbar();
+  }
+
+  function stopMarkup() {
+    if (!markupActive) return;
+    markupActive = false;
+    if (markupSvg) {
+      markupSvg.remove();
+      markupSvg = null;
+    }
+    if (markupTbHost) {
+      markupTbHost.remove();
+      markupTbHost = null;
+      markupTbShadow = null;
+    }
+    if (markupTextEditor) {
+      markupTextEditor.remove();
+      markupTextEditor = null;
+    }
+    markupCurrent = null;
+    markupStart = null;
+    document.removeEventListener('keydown', onMarkupKey, true);
+    window.removeEventListener('resize', resizeMarkupSvg);
+
+    // Restore inspector panel and re-render normal view
+    const host = document.getElementById(ROOT);
+    if (host) host.style.removeProperty('display');
+    markupInspectorVisible = false;
+    if (host) render();
+  }
+
+  function onMarkupKey(e) {
+    if (e.key === 'Escape') {
+      if (markupTextEditor) finalizeTextEditor(false);
+      else stopMarkup();
+    }
+  }
+
+  function resizeMarkupSvg() {
+    if (!markupSvg) return;
+    const w = Math.max(document.documentElement.scrollWidth, window.innerWidth);
+    const h = Math.max(document.documentElement.scrollHeight, window.innerHeight);
+    markupSvg.setAttribute('width', w);
+    markupSvg.setAttribute('height', h);
+    markupSvg.style.width = w + 'px';
+    markupSvg.style.height = h + 'px';
+  }
+
+  function buildMarkupSvg() {
+    const w = Math.max(document.documentElement.scrollWidth, window.innerWidth);
+    const h = Math.max(document.documentElement.scrollHeight, window.innerHeight);
+    const svg = document.createElementNS(MK_SVG_NS, 'svg');
+    svg.id = MK_SVG_ID;
+    svg.setAttribute('width', w);
+    svg.setAttribute('height', h);
+    svg.style.cssText = `position:absolute;top:0;left:0;width:${w}px;height:${h}px;z-index:2147483640;pointer-events:auto;cursor:crosshair;`;
+
+    // Reusable arrowhead marker
+    const defs = document.createElementNS(MK_SVG_NS, 'defs');
+    defs.innerHTML = `<marker id="uii-mk-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker>`;
+    svg.appendChild(defs);
+
+    svg.addEventListener('mousedown', onMarkupDown);
+    svg.addEventListener('mousemove', onMarkupMove);
+    svg.addEventListener('mouseup', onMarkupUp);
+    svg.addEventListener('mouseleave', onMarkupUp);
+
+    document.body.appendChild(svg);
+    markupSvg = svg;
+  }
+
+  function svgCoords(e) {
+    // Convert clientX/Y into document coordinates (matches the SVG, which is positioned
+    // at document top-left).
+    return { x: e.clientX + window.scrollX, y: e.clientY + window.scrollY };
+  }
+
+  function onMarkupDown(e) {
+    if (!markupSvg) return;
+    if (e.target.classList && e.target.classList.contains('uii-mk-text-input')) return;
+    if (markupTextEditor) finalizeTextEditor(true);
+
+    const { x, y } = svgCoords(e);
+    markupStart = { x, y };
+
+    if (markupTool === 'text') {
+      showTextEditor(x, y);
+      return;
+    }
+
+    const stroke = markupColor;
+    const sw = markupStrokeWidth;
+    let el;
+    if (markupTool === 'pencil') {
+      el = document.createElementNS(MK_SVG_NS, 'path');
+      markupPath = `M ${x} ${y}`;
+      el.setAttribute('d', markupPath);
+      el.setAttribute('fill', 'none');
+      el.setAttribute('stroke-linecap', 'round');
+      el.setAttribute('stroke-linejoin', 'round');
+    } else if (markupTool === 'rect') {
+      el = document.createElementNS(MK_SVG_NS, 'rect');
+      el.setAttribute('x', x); el.setAttribute('y', y);
+      el.setAttribute('width', 0); el.setAttribute('height', 0);
+      el.setAttribute('fill', 'none');
+    } else if (markupTool === 'ellipse') {
+      el = document.createElementNS(MK_SVG_NS, 'ellipse');
+      el.setAttribute('cx', x); el.setAttribute('cy', y);
+      el.setAttribute('rx', 0); el.setAttribute('ry', 0);
+      el.setAttribute('fill', 'none');
+    } else if (markupTool === 'arrow') {
+      el = document.createElementNS(MK_SVG_NS, 'line');
+      el.setAttribute('x1', x); el.setAttribute('y1', y);
+      el.setAttribute('x2', x); el.setAttribute('y2', y);
+      el.setAttribute('marker-end', 'url(#uii-mk-arrow)');
+      el.setAttribute('stroke-linecap', 'round');
+    } else return;
+
+    el.setAttribute('stroke', stroke);
+    el.setAttribute('stroke-width', sw);
+    el.classList.add('uii-mk-shape');
+    markupSvg.appendChild(el);
+    markupCurrent = el;
+    e.preventDefault();
+  }
+
+  function onMarkupMove(e) {
+    if (!markupCurrent || !markupStart) return;
+    const { x, y } = svgCoords(e);
+    const sx = markupStart.x, sy = markupStart.y;
+
+    if (markupTool === 'pencil') {
+      markupPath += ` L ${x} ${y}`;
+      markupCurrent.setAttribute('d', markupPath);
+    } else if (markupTool === 'rect') {
+      const rx = Math.min(sx, x), ry = Math.min(sy, y);
+      markupCurrent.setAttribute('x', rx);
+      markupCurrent.setAttribute('y', ry);
+      markupCurrent.setAttribute('width', Math.abs(x - sx));
+      markupCurrent.setAttribute('height', Math.abs(y - sy));
+    } else if (markupTool === 'ellipse') {
+      const cx = (sx + x) / 2, cy = (sy + y) / 2;
+      markupCurrent.setAttribute('cx', cx);
+      markupCurrent.setAttribute('cy', cy);
+      markupCurrent.setAttribute('rx', Math.abs(x - sx) / 2);
+      markupCurrent.setAttribute('ry', Math.abs(y - sy) / 2);
+    } else if (markupTool === 'arrow') {
+      markupCurrent.setAttribute('x2', x);
+      markupCurrent.setAttribute('y2', y);
+    }
+  }
+
+  function onMarkupUp() {
+    if (markupCurrent) {
+      // Discard zero-size shapes
+      if (markupTool === 'rect') {
+        const w = parseFloat(markupCurrent.getAttribute('width'));
+        const h = parseFloat(markupCurrent.getAttribute('height'));
+        if (w < 3 && h < 3) markupCurrent.remove();
+      } else if (markupTool === 'ellipse') {
+        const rx = parseFloat(markupCurrent.getAttribute('rx'));
+        const ry = parseFloat(markupCurrent.getAttribute('ry'));
+        if (rx < 3 && ry < 3) markupCurrent.remove();
+      } else if (markupTool === 'arrow') {
+        const dx = parseFloat(markupCurrent.getAttribute('x2')) - parseFloat(markupCurrent.getAttribute('x1'));
+        const dy = parseFloat(markupCurrent.getAttribute('y2')) - parseFloat(markupCurrent.getAttribute('y1'));
+        if (Math.hypot(dx, dy) < 5) markupCurrent.remove();
+      }
+    }
+    markupCurrent = null;
+    markupStart = null;
+  }
+
+  function showTextEditor(x, y) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'uii-mk-text-input';
+    input.placeholder = 'Type and press Enter';
+    input.style.cssText = `position:absolute;top:${y}px;left:${x}px;z-index:2147483641;border:2px dashed ${markupColor};background:rgba(255,255,255,.95);color:#1a1a2e;font:${markupFontSize}px/1.2 'Inter',sans-serif;padding:2px 6px;border-radius:4px;outline:none;min-width:140px;`;
+    document.body.appendChild(input);
+    setTimeout(() => input.focus(), 0);
+    markupTextEditor = input;
+
+    const commit = () => finalizeTextEditor(true);
+    const cancel = () => finalizeTextEditor(false);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      e.stopPropagation();
+    });
+    input.addEventListener('blur', commit);
+  }
+
+  function finalizeTextEditor(commit) {
+    if (!markupTextEditor) return;
+    const value = markupTextEditor.value.trim();
+    const rect = markupTextEditor.getBoundingClientRect();
+    const x = rect.left + window.scrollX + 6;
+    const y = rect.top + window.scrollY + parseInt(getComputedStyle(markupTextEditor).fontSize, 10);
+    const fontSize = parseInt(getComputedStyle(markupTextEditor).fontSize, 10);
+    const color = markupColor;
+    markupTextEditor.remove();
+    markupTextEditor = null;
+    if (!commit || !value || !markupSvg) return;
+    const t = document.createElementNS(MK_SVG_NS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('fill', color);
+    t.setAttribute('font-family', "'Inter',-apple-system,sans-serif");
+    t.setAttribute('font-size', fontSize);
+    t.setAttribute('font-weight', '600');
+    t.classList.add('uii-mk-shape');
+    t.classList.add('uii-mk-text');
+    t.style.cursor = 'move';
+    t.style.userSelect = 'none';
+    t.textContent = value;
+    t.addEventListener('mousedown', startTextDrag);
+    t.addEventListener('dblclick', startTextEdit);
+    markupSvg.appendChild(t);
+  }
+
+  function startTextDrag(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    const text = e.currentTarget;
+    const startCX = e.clientX, startCY = e.clientY;
+    const origX = parseFloat(text.getAttribute('x'));
+    const origY = parseFloat(text.getAttribute('y'));
+    let moved = false;
+    const onMove = (ev) => {
+      moved = true;
+      text.setAttribute('x', origX + (ev.clientX - startCX));
+      text.setAttribute('y', origY + (ev.clientY - startCY));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove, true);
+      document.removeEventListener('mouseup', onUp, true);
+    };
+    document.addEventListener('mousemove', onMove, true);
+    document.addEventListener('mouseup', onUp, true);
+  }
+
+  function startTextEdit(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    const text = e.currentTarget;
+    const x = parseFloat(text.getAttribute('x'));
+    const fontSize = parseInt(text.getAttribute('font-size'), 10) || 16;
+    const y = parseFloat(text.getAttribute('y')) - fontSize;
+    const oldValue = text.textContent;
+    const color = text.getAttribute('fill') || markupColor;
+    text.remove();
+    // Reuse the existing editor at that location, seeded with the old value
+    const tool = markupTool;
+    markupTool = 'text';
+    const prevColor = markupColor;
+    markupColor = color;
+    showTextEditor(x, y);
+    if (markupTextEditor) markupTextEditor.value = oldValue;
+    markupColor = prevColor;
+    markupTool = tool;
+  }
+
+  function clearMarkup() {
+    if (!markupSvg) return;
+    markupSvg.querySelectorAll('.uii-mk-shape').forEach(e => e.remove());
+  }
+
+  function undoLastShape() {
+    if (!markupSvg) return;
+    const shapes = markupSvg.querySelectorAll('.uii-mk-shape');
+    if (shapes.length) shapes[shapes.length - 1].remove();
+  }
+
+  async function captureMarkup() {
+    // Detach both the toolbar and the inspector panel from the DOM so they
+    // cannot possibly appear in the screenshot. Re-attach them after.
+    const tbHost = markupTbHost;
+    const tbParent = tbHost?.parentNode;
+    const tbNext = tbHost?.nextSibling;
+    if (tbHost) tbHost.remove();
+
+    const panelHost = document.getElementById(ROOT);
+    const panelParent = panelHost?.parentNode;
+    const panelNext = panelHost?.nextSibling;
+    const panelWasVisible = panelHost && getComputedStyle(panelHost).display !== 'none';
+    if (panelHost) panelHost.remove();
+
+    // Wait for the browser to paint without the extension UI before sampling.
+    await new Promise(r => setTimeout(r, 80));
+    try {
+      const resp = await new Promise(resolve => {
+        chrome.runtime.sendMessage({ action: 'capture-tab' }, resolve);
+      });
+      if (!resp || resp.error || !resp.dataUrl) {
+        toast(resp?.error ? 'Capture failed: ' + resp.error : 'Capture failed');
+        return;
+      }
+      const blob = await (await fetch(resp.dataUrl)).blob();
+      let clipboardOk = true;
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      } catch (e) { clipboardOk = false; }
+      addCapture(resp.dataUrl);
+      toast(clipboardOk ? 'Screenshot copied & saved' : 'Saved (clipboard unavailable)');
+    } catch (err) {
+      toast('Capture failed');
+    } finally {
+      // Re-attach the panel exactly where it was, preserving prior visibility.
+      if (panelHost && panelParent) {
+        if (panelNext && panelNext.parentNode === panelParent) panelParent.insertBefore(panelHost, panelNext);
+        else panelParent.appendChild(panelHost);
+        if (panelWasVisible) panelHost.style.removeProperty('display');
+        else panelHost.style.setProperty('display', 'none', 'important');
+      }
+      // Re-attach the markup toolbar.
+      if (tbHost && tbParent) {
+        if (tbNext && tbNext.parentNode === tbParent) tbParent.insertBefore(tbHost, tbNext);
+        else tbParent.appendChild(tbHost);
+      }
+      // Refresh panel so the new capture appears in the gallery.
+      if (markupActive) render();
+    }
+  }
+
+  /* ── Markup toolbar (shadow DOM) ────────────────────── */
+  function buildMarkupToolbar() {
+    const host = document.createElement('div');
+    host.id = MK_TB_ID;
+    host.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;';
+    document.body.appendChild(host);
+    markupTbHost = host;
+    markupTbShadow = host.attachShadow({ mode: 'open' });
+    renderMarkupToolbar();
+  }
+
+  function renderMarkupToolbar() {
+    if (!markupTbShadow) return;
+    const tools = [
+      { id: 'pencil',  icon: IC.pencil,    label: 'Pencil' },
+      { id: 'rect',    icon: IC.rect,      label: 'Rectangle' },
+      { id: 'ellipse', icon: IC.ellipse,   label: 'Ellipse' },
+      { id: 'arrow',   icon: IC.arrow,     label: 'Arrow' },
+      { id: 'text',    icon: IC.textIcon,  label: 'Text' },
+    ];
+    const widths = [2, 4, 7];
+
+    const css = `
+      :host { all: initial; }
+      * { box-sizing: border-box; font-family: 'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
+      .tb {
+        display: flex; align-items: center; gap: 6px;
+        background: #1a1a2e; padding: 6px 8px; border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.05);
+        user-select: none;
+      }
+      .group { display: flex; align-items: center; gap: 2px; }
+      .divider { width: 1px; height: 22px; background: rgba(255,255,255,.12); margin: 0 4px; }
+      button {
+        width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+        border: none; background: transparent; color: #cfcfe0; cursor: pointer; border-radius: 7px;
+        transition: background .12s, color .12s; padding: 0;
+      }
+      button:hover { background: rgba(255,255,255,.08); color: #fff; }
+      button.on { background: rgba(255,255,255,.14); color: #fff; }
+      button svg { width: 18px; height: 18px; fill: currentColor; pointer-events: none; }
+      .swatch {
+        width: 22px; height: 22px; border-radius: 50%;
+        border: 2px solid transparent; cursor: pointer; padding: 0;
+        background-clip: content-box; transition: transform .1s, border-color .12s;
+      }
+      .swatch:hover { transform: scale(1.1); }
+      .swatch.on { border-color: #fff; }
+      .swatch.light { box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
+      .wpill {
+        width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+        border: none; background: transparent; border-radius: 6px; cursor: pointer;
+      }
+      .wpill:hover { background: rgba(255,255,255,.08); }
+      .wpill.on { background: rgba(255,255,255,.14); }
+      .wpill .dot { display: block; background: #cfcfe0; border-radius: 50%; }
+      .wpill.on .dot { background: #fff; }
+      .wpill .num { font-size: 11px; font-weight: 600; color: #cfcfe0; line-height: 1; }
+      .wpill.on .num { color: #fff; }
+      .fpill { width: 30px; }
+      .fsize-input {
+        width: 48px; height: 26px; margin-left: 4px;
+        background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.10);
+        border-radius: 6px; color: #fff; font-size: 11px; font-weight: 600;
+        text-align: center; padding: 0 4px; font-family: inherit; outline: none;
+      }
+      .fsize-input:focus { border-color: rgba(255,255,255,.4); background: rgba(255,255,255,.10); }
+      .fsize-input::-webkit-inner-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+      .label {
+        font-size: 10px; color: rgba(255,255,255,.45); padding: 0 6px; letter-spacing: .3px;
+        text-transform: uppercase; font-weight: 600;
+      }
+    `;
+
+    let h = `<style>${css}</style><div class="tb">`;
+    // Tools
+    h += `<div class="group">`;
+    tools.forEach(t => {
+      h += `<button data-tool="${t.id}" class="${markupTool === t.id ? 'on' : ''}" title="${t.label}">${t.icon}</button>`;
+    });
+    h += `</div><div class="divider"></div>`;
+    // Colors
+    h += `<div class="group">`;
+    MK_COLORS.forEach(c => {
+      const light = (c === '#FFFFFF') ? ' light' : '';
+      h += `<button class="swatch${markupColor === c ? ' on' : ''}${light}" data-color="${c}" style="background:${c}" title="${c}"></button>`;
+    });
+    h += `</div><div class="divider"></div>`;
+    // Stroke width or font size, depending on tool
+    h += `<div class="group">`;
+    if (markupTool === 'text') {
+      MK_FONT_PRESETS.forEach(s => {
+        h += `<button class="wpill fpill ${markupFontSize === s ? 'on' : ''}" data-fontsize="${s}" title="${s}px"><span class="num">${s}</span></button>`;
+      });
+      h += `<input type="number" class="fsize-input" data-fontsize-custom value="${markupFontSize}" min="4" max="200" step="1" title="Custom font size">`;
+    } else {
+      widths.forEach(w => {
+        const dot = Math.min(14, w + 3);
+        h += `<button class="wpill ${markupStrokeWidth === w ? 'on' : ''}" data-width="${w}" title="${w}px"><span class="dot" style="width:${dot}px;height:${dot}px"></span></button>`;
+      });
+    }
+    h += `</div><div class="divider"></div>`;
+    // Actions
+    h += `<div class="group">`;
+    const eyeIcon = markupInspectorVisible ? IC.eyeOff : IC.eye;
+    const eyeTitle = markupInspectorVisible ? 'Hide Inspector panel' : 'Show Inspector panel';
+    h += `<button data-act="toggle-inspector" class="${markupInspectorVisible ? 'on' : ''}" title="${eyeTitle}">${eyeIcon}</button>`;
+    h += `<button data-act="undo" title="Undo last (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62a7.97 7.97 0 0 1 5.12-1.88c3.54 0 6.55 2.31 7.6 5.5l2.37-.78A9.991 9.991 0 0 0 12.5 8z" fill="currentColor"/></svg></button>`;
+    h += `<button data-act="clear" title="Clear all">${IC.trash}</button>`;
+    h += `<button data-act="capture" title="Copy screenshot to clipboard">${IC.camera}</button>`;
+    h += `<button data-act="close" title="Exit markup (Esc)">${IC.close}</button>`;
+    h += `</div></div>`;
+
+    markupTbShadow.innerHTML = h;
+    bindMarkupToolbar();
+  }
+
+  function bindMarkupToolbar() {
+    if (!markupTbShadow) return;
+    markupTbShadow.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => {
+      markupTool = b.dataset.tool;
+      if (markupSvg) markupSvg.style.cursor = markupTool === 'text' ? 'text' : 'crosshair';
+      renderMarkupToolbar();
+      if (markupActive && markupInspectorVisible) render();
+    }));
+    markupTbShadow.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => {
+      markupColor = b.dataset.color;
+      renderMarkupToolbar();
+      if (markupActive && markupInspectorVisible) render();
+    }));
+    markupTbShadow.querySelectorAll('[data-width]').forEach(b => b.addEventListener('click', () => {
+      markupStrokeWidth = parseInt(b.dataset.width, 10);
+      renderMarkupToolbar();
+      if (markupActive && markupInspectorVisible) render();
+    }));
+    markupTbShadow.querySelectorAll('[data-fontsize]').forEach(b => b.addEventListener('click', () => {
+      markupFontSize = parseInt(b.dataset.fontsize, 10);
+      renderMarkupToolbar();
+      if (markupActive && markupInspectorVisible) render();
+    }));
+    const fsCustom = markupTbShadow.querySelector('[data-fontsize-custom]');
+    if (fsCustom) {
+      // applyValue(silent=true) updates markupFontSize without re-rendering — used on
+      // every keystroke so the value is always current when the user clicks the canvas.
+      // applyValue(false) re-renders the toolbar/panel and surfaces validation errors.
+      const applyValue = (silent) => {
+        const v = parseInt(fsCustom.value, 10);
+        if (!isNaN(v) && v >= 4 && v <= 200) {
+          markupFontSize = v;
+          if (!silent) {
+            renderMarkupToolbar();
+            if (markupActive && markupInspectorVisible) render();
+          }
+          return true;
+        }
+        if (!silent) {
+          fsCustom.value = String(markupFontSize);
+          toast('Font size must be 4–200 px');
+        }
+        return false;
+      };
+      fsCustom.addEventListener('input', () => applyValue(true));
+      fsCustom.addEventListener('change', () => applyValue(false));
+      fsCustom.addEventListener('blur', () => applyValue(false));
+      fsCustom.addEventListener('keydown', e => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); applyValue(false); fsCustom.blur(); }
+      });
+      fsCustom.addEventListener('click', e => e.stopPropagation());
+    }
+    markupTbShadow.querySelectorAll('[data-act="toggle-inspector"]').forEach(b => b.addEventListener('click', toggleMarkupInspector));
+    markupTbShadow.querySelectorAll('[data-act="undo"]').forEach(b => b.addEventListener('click', undoLastShape));
+    markupTbShadow.querySelectorAll('[data-act="clear"]').forEach(b => b.addEventListener('click', clearMarkup));
+    markupTbShadow.querySelectorAll('[data-act="capture"]').forEach(b => b.addEventListener('click', captureMarkup));
+    markupTbShadow.querySelectorAll('[data-act="close"]').forEach(b => b.addEventListener('click', stopMarkup));
   }
 
   /* ── Events ──────────────────────────────────────────── */
   function bind(root) {
     root.querySelectorAll('[data-act="close"]').forEach(b=>b.addEventListener('click',()=>removePanel()));
+    root.querySelectorAll('[data-act="markup"]').forEach(b=>b.addEventListener('click',()=>{ stopPick(); startMarkup(); }));
+    root.querySelectorAll('[data-act="exit-markup"]').forEach(b=>b.addEventListener('click',()=>stopMarkup()));
+    root.querySelectorAll('[data-act="mk-capture"]').forEach(b=>b.addEventListener('click',()=>captureMarkup()));
+    root.querySelectorAll('[data-act="mk-clear-canvas"]').forEach(b=>b.addEventListener('click',()=>clearMarkup()));
+    root.querySelectorAll('[data-act="mk-clear-captures"]').forEach(b=>b.addEventListener('click',()=>{ clearAllCaptures(); render(); }));
+    root.querySelectorAll('[data-act="mk-preview"]').forEach(b=>b.addEventListener('click',()=>previewCapture(b.dataset.capId)));
+    root.querySelectorAll('[data-act="mk-cap-copy"]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); copyCapture(b.dataset.capId); }));
+    root.querySelectorAll('[data-act="mk-cap-download"]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); downloadCapture(b.dataset.capId); }));
+    root.querySelectorAll('[data-act="mk-cap-delete"]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); deleteCapture(b.dataset.capId); render(); }));
     root.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{ tab=b.dataset.tab; if(tab==='inspector'){render();startPick();} else{stopPick();render();} }));
     root.querySelectorAll('[data-act="pick"]').forEach(b=>b.addEventListener('click',()=>startPick()));
     root.querySelectorAll('[data-act="back-insp"]').forEach(b=>b.addEventListener('click',()=>{tab='inspector';render();startPick();}));
@@ -1558,6 +2429,27 @@
     root.querySelectorAll('[data-act="copy-a11y-issue"]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
     root.querySelectorAll('[data-act="copy-a11y-group"]').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); cp(b.dataset.prompt); }));
     root.querySelectorAll('[data-act="copy-spacing-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(auditData) cp(buildSpacingPrompt(auditData)); }));
+    // Layout tab events
+    root.querySelectorAll('[data-act="run-layout"]').forEach(b=>b.addEventListener('click',async()=>{
+      document.querySelectorAll('.uii-layout-highlight').forEach(e=>e.remove());
+      layoutData='loading'; render();
+      await new Promise(r=>setTimeout(r,120));
+      layoutData = scanLayoutOverflow();
+      render();
+    }));
+    root.querySelectorAll('[data-act="copy-layout-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(layoutData && layoutData!=='loading') cp(buildLayoutPrompt(layoutData)); }));
+    root.querySelectorAll('[data-act="highlight-layout"]').forEach(b=>b.addEventListener('click',()=>{
+      document.querySelectorAll('.uii-layout-highlight').forEach(e=>e.remove());
+      if(!layoutData || layoutData==='loading') return;
+      layoutData.culprits.forEach(c=>{ if(!c.el) return; const r=c.el.getBoundingClientRect(); const d=document.createElement('div'); d.className='uii-layout-highlight'; d.style.cssText=`position:absolute;top:${r.top+window.scrollY}px;left:${r.left+window.scrollX}px;width:${r.width}px;height:${r.height}px;border:2px dashed #dc2626;background:rgba(239,68,68,.06);z-index:2147483645;pointer-events:none;border-radius:3px;`; document.body.appendChild(d); });
+      setTimeout(()=>document.querySelectorAll('.uii-layout-highlight').forEach(e=>e.remove()), 4000);
+    }));
+    root.querySelectorAll('.uii-layout-row[data-layout-idx]').forEach(row=>row.addEventListener('click',()=>{
+      if(!layoutData || layoutData==='loading') return;
+      const idx = parseInt(row.dataset.layoutIdx);
+      const c = layoutData.culprits[idx];
+      if(c && c.el) c.el.scrollIntoView({behavior:'smooth',block:'center'});
+    }));
     // SEO tab events
     root.querySelectorAll('[data-act="copy-seo-prompt"]').forEach(b=>b.addEventListener('click',()=>{ if(seoData) cp(buildSEOPrompt(seoData)); }));
     root.querySelectorAll('[data-act="rescan-seo"]').forEach(b=>b.addEventListener('click',()=>{ seoData = 'loading'; render(); setTimeout(()=>{ seoData = null; render(); }, 600); }));
@@ -1744,8 +2636,8 @@
 
   /* ── Chrome Message ─────────────────────────────────── */
   chrome.runtime.onMessage.addListener((msg,_,res) => {
-    if(msg.action==='inspect-page'){data=scan();tab='overview';render();res({status:'Panel opened.'});}
-    else if(msg.action==='pick-element'){data=data||scan();tab='inspector';render();startPick();res({status:'Click an element.'});}
+    if(msg.action==='inspect-page'){data=scan();tab='overview';if(!markupCapturesLoaded) loadCaptures();render();res({status:'Panel opened.'});}
+    else if(msg.action==='pick-element'){data=data||scan();tab='inspector';if(!markupCapturesLoaded) loadCaptures();render();startPick();res({status:'Click an element.'});}
     return true;
   });
 })();

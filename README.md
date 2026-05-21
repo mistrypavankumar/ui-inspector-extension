@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>The all-in-one Chrome extension for frontend developers and designers.</strong><br/>
-  Extract design tokens, audit performance, check accessibility & SEO, and get AI-ready fix prompts — all from a single floating panel.
+  Extract design tokens, audit performance, check accessibility & SEO, annotate the page with shapes and text, capture screenshots, and get AI-ready fix prompts — all from a single floating panel.
 </p>
 
 <p align="center">
@@ -35,6 +35,7 @@ Most browser DevTools are powerful but scattered. UI Inspector brings **design e
 | **Audit** | Performance & quality audit: CLS, images, unused CSS, accessibility, spacing consistency, design token export |
 | **SEO** | Meta tags, Open Graph, heading structure, link analysis, structured data, 0-100 score |
 | **Inspector** | Element picker with box model, text props, colors, layout details, contrast ratio, AI fix prompts |
+| **Markup Mode** | Annotate the live page with pencil, rectangle, ellipse, arrow, and draggable text; copy screenshots to clipboard; gallery of saved captures persisted locally |
 
 ---
 
@@ -113,6 +114,56 @@ Case-insensitive meta tag detection ensures compatibility with all frameworks an
 
 ---
 
+## Markup Mode
+
+Click the **pen icon** in the panel header to enter Markup Mode. The inspector panel transforms into a markup workspace and a floating toolbar appears at the top-center of the page so you can draw directly on the live DOM — perfect for filing visual bug reports, briefing design changes, or sharing review feedback.
+
+### Toolbar
+
+| Section | Controls |
+|---------|----------|
+| **Tools** | Pencil (freehand), Rectangle outline, Ellipse outline, Arrow with arrowhead, Text |
+| **Colors** | 9-swatch palette — red, orange, yellow, green, blue, indigo, purple, black, white |
+| **Size** | 3 stroke-width presets for shapes; switches to **font-size presets (12/16/20/28 px) + custom number input (4–200)** when the Text tool is selected |
+| **Actions** | Show/Hide Inspector panel, Undo last shape, Clear canvas, Copy Screenshot to Clipboard, Exit (Esc) |
+
+### Drawing & Text
+
+- **Pencil / Rect / Ellipse / Arrow** — click-drag on the page; zero-size shapes are auto-discarded on mouseup
+- **Text** — click to drop an inline editor, type, **Enter** to commit (Esc cancels). Committed text is draggable: hover shows a move cursor, click-drag repositions it. **Double-click** a text annotation to re-open the editor with the previous value
+- The annotation layer is a **full-document SVG**, so annotations stay anchored to page content when you scroll
+
+### Status Panel
+
+While markup is active, the inspector panel shows a live status card with the current **Tool / Color / Stroke (or Font size)** and quick actions for **Capture Screenshot** and **Clear Drawing**. Toolbar selections update the panel in real time.
+
+### Screenshot Capture
+
+Click the camera icon (toolbar or panel button). The flow:
+
+1. The panel host and toolbar host are temporarily **detached from the DOM** so they cannot appear in the screenshot
+2. The browser repaints, then a background service worker calls `chrome.tabs.captureVisibleTab` to grab the visible tab
+3. The PNG is written to the clipboard via `ClipboardItem` **and** saved to `chrome.storage.local`
+4. The UI is restored exactly where it was
+
+### Captures Gallery
+
+Every screenshot is persisted in the panel's **Captures** section (capped at the last 20). Each row shows a thumbnail and timestamp with three actions:
+
+- **Copy** — re-copy the PNG to clipboard
+- **Download** — save as `markup-<ISO-timestamp>.png`
+- **Delete** — remove this capture
+- Click the thumbnail to preview the full-resolution image in a new tab
+
+Captures survive page reloads and browser restarts. Hit **Clear All** in the header to wipe the gallery.
+
+### Keyboard
+
+- **Esc** — cancels active text input first, then exits Markup Mode
+- **Enter** — commits text annotation (or applies a custom font-size value)
+
+---
+
 ## AI-Ready Prompts
 
 Every issue discovered by UI Inspector can be copied as a ready-to-paste prompt:
@@ -156,8 +207,11 @@ ui-inspector-extension/
   manifest.json      — Chrome MV3 manifest
   popup.html         — Extension popup UI
   popup.js           — Popup click handlers
+  background.js      — Service worker: handles tab screenshot capture
+                       (chrome.tabs.captureVisibleTab) for Markup Mode
   content.js         — Core: scanning, rendering, picker, color swaps,
-                       audit, accessibility, SEO, token export
+                       audit, accessibility, SEO, token export, markup
+                       overlay & toolbar, capture persistence
   content.css        — Panel styles (loaded into Shadow DOM)
   icons/             — Extension icons (16, 48, 128px)
   docs/mockups/      — HTML design mockups
@@ -179,6 +233,10 @@ ui-inspector-extension/
 | `document.styleSheets` / `cssRules` | Unused CSS detection |
 | WCAG relative luminance formula | Contrast ratio calculation |
 | DOM traversal | Accessibility & SEO checks |
+| Inline **SVG** with namespace API | Markup annotation overlay (shapes, arrows, text) |
+| `chrome.tabs.captureVisibleTab` | Screenshot capture (Markup Mode) |
+| `ClipboardItem` + `navigator.clipboard.write` | Copy PNG screenshots to clipboard |
+| `chrome.storage.local` | Persisted markup captures gallery |
 
 ---
 
@@ -186,10 +244,12 @@ ui-inspector-extension/
 
 | Permission | Reason |
 |-----------|--------|
-| `activeTab` | Access the current tab when clicked |
+| `activeTab` | Access the current tab when clicked; required by `chrome.tabs.captureVisibleTab` for Markup screenshots |
 | `scripting` | Inject content script |
+| `storage` | Persist Markup Mode screenshot captures in the gallery |
+| `unlimitedStorage` | Remove the 5 MB cap on `chrome.storage.local` so captures aren't truncated |
 
-**No data is collected, stored, or sent anywhere. Everything runs 100% locally in the browser.**
+**No data is collected, stored, or sent anywhere. Everything runs 100% locally in the browser. Markup screenshots live only in your browser's local storage and can be deleted at any time from the Captures gallery.**
 
 ---
 

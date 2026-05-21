@@ -3,7 +3,7 @@
   "name": "UI Inspector",
   "version": "1.0.0",
   "description": "Inspect any webpage to see all colors, font sizes, class names, spacing, and more.",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "storage", "unlimitedStorage"],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -11,6 +11,9 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "icons": {
     "16": "icons/icon16.png",
