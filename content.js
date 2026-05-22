@@ -2021,37 +2021,60 @@
     markupStart = null;
   }
 
-  function showTextEditor(x, y) {
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'uii-mk-text-input';
-    input.placeholder = 'Type and press Enter';
-    input.style.cssText = `position:absolute;top:${y}px;left:${x}px;z-index:2147483641;border:2px dashed ${markupColor};background:rgba(255,255,255,.95);color:#1a1a2e;font:${markupFontSize}px/1.2 'Inter',sans-serif;padding:2px 6px;border-radius:4px;outline:none;min-width:140px;`;
-    document.body.appendChild(input);
-    setTimeout(() => input.focus(), 0);
-    markupTextEditor = input;
+  function showTextEditor(x, y, opts) {
+    const initialWidth = (opts && opts.width) || 240;
+    const initialHeight = (opts && opts.height) || Math.round(markupFontSize * 1.4 + 8);
+    const ta = document.createElement('textarea');
+    ta.className = 'uii-mk-text-input';
+    ta.placeholder = 'Type — Enter to commit, Shift+Enter for new line';
+    ta.rows = 1;
+    ta.spellcheck = false;
+    ta.style.cssText = `position:absolute;top:${y}px;left:${x}px;z-index:2147483641;border:2px dashed ${markupColor};background:rgba(255,255,255,.95);color:#1a1a2e;font:${markupFontSize}px/1.25 'Inter',sans-serif;padding:4px 6px;border-radius:4px;outline:none;min-width:80px;min-height:${Math.round(markupFontSize * 1.4)}px;width:${initialWidth}px;height:${initialHeight}px;resize:both;overflow:auto;white-space:pre-wrap;word-break:break-word;box-sizing:border-box;`;
+    document.body.appendChild(ta);
+    setTimeout(() => ta.focus(), 0);
+    markupTextEditor = ta;
+
+    const autoGrow = () => {
+      // Only auto-grow if the user hasn't manually resized to a taller height.
+      const current = ta.offsetHeight;
+      ta.style.height = 'auto';
+      const needed = Math.max(ta.scrollHeight, current);
+      ta.style.height = needed + 'px';
+    };
+    ta.addEventListener('input', autoGrow);
 
     const commit = () => finalizeTextEditor(true);
     const cancel = () => finalizeTextEditor(false);
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    ta.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); }
       else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
       e.stopPropagation();
     });
-    input.addEventListener('blur', commit);
+    ta.addEventListener('blur', commit);
   }
 
   function finalizeTextEditor(commit) {
     if (!markupTextEditor) return;
-    const value = markupTextEditor.value.trim();
+    const value = markupTextEditor.value.replace(/\s+$/, '');
+    const cs = getComputedStyle(markupTextEditor);
     const rect = markupTextEditor.getBoundingClientRect();
-    const x = rect.left + window.scrollX + 6;
-    const y = rect.top + window.scrollY + parseInt(getComputedStyle(markupTextEditor).fontSize, 10);
-    const fontSize = parseInt(getComputedStyle(markupTextEditor).fontSize, 10);
+    const fontSize = parseInt(cs.fontSize, 10);
+    const padL = parseFloat(cs.paddingLeft) || 0;
+    const padT = parseFloat(cs.paddingTop) || 0;
+    const borderL = parseFloat(cs.borderLeftWidth) || 0;
+    const borderT = parseFloat(cs.borderTopWidth) || 0;
+    const contentWidth = markupTextEditor.clientWidth - padL - (parseFloat(cs.paddingRight) || 0);
+    const editorWidth = rect.width;
+    const editorHeight = rect.height;
+    const x = rect.left + window.scrollX + borderL + padL;
+    const y = rect.top + window.scrollY + borderT + padT + fontSize;
     const color = markupColor;
     markupTextEditor.remove();
     markupTextEditor = null;
     if (!commit || !value || !markupSvg) return;
+    const font = `600 ${fontSize}px 'Inter',-apple-system,sans-serif`;
+    const lines = wrapMarkupText(value, Math.max(contentWidth, fontSize * 2), font);
+    const lineHeight = Math.round(fontSize * 1.25);
     const t = document.createElementNS(MK_SVG_NS, 'text');
     t.setAttribute('x', x); t.setAttribute('y', y);
     t.setAttribute('fill', color);
@@ -2062,10 +2085,60 @@
     t.classList.add('uii-mk-text');
     t.style.cursor = 'move';
     t.style.userSelect = 'none';
-    t.textContent = value;
+    t.dataset.rawText = value;
+    t.dataset.boxWidth = String(editorWidth);
+    t.dataset.boxHeight = String(editorHeight);
+    lines.forEach((line, i) => {
+      const ts = document.createElementNS(MK_SVG_NS, 'tspan');
+      ts.setAttribute('x', x);
+      ts.setAttribute('dy', i === 0 ? '0' : String(lineHeight));
+      ts.textContent = line || ' ';
+      t.appendChild(ts);
+    });
     t.addEventListener('mousedown', startTextDrag);
     t.addEventListener('dblclick', startTextEdit);
     markupSvg.appendChild(t);
+  }
+
+  // Wrap text by pixel width using canvas measurement. Honours explicit \n,
+  // wraps on whitespace where possible, and falls back to character breaks
+  // for unbreakable runs (long URLs, "asdfasdfasdf"-style strings).
+  function wrapMarkupText(text, maxWidth, font) {
+    const ctx = (wrapMarkupText._ctx ||= document.createElement('canvas').getContext('2d'));
+    ctx.font = font;
+    const measure = s => ctx.measureText(s).width;
+    const result = [];
+    const breakWord = (word) => {
+      const parts = [];
+      let cur = '';
+      for (const ch of word) {
+        if (measure(cur + ch) > maxWidth && cur) {
+          parts.push(cur);
+          cur = ch;
+        } else {
+          cur += ch;
+        }
+      }
+      if (cur) parts.push(cur);
+      return parts;
+    };
+    text.split('\n').forEach(paragraph => {
+      if (!paragraph) { result.push(''); return; }
+      const tokens = paragraph.split(/(\s+)/);
+      let line = '';
+      for (const tok of tokens) {
+        if (!tok) continue;
+        if (measure(line + tok) <= maxWidth) { line += tok; continue; }
+        if (line.trim()) { result.push(line.replace(/\s+$/, '')); line = ''; }
+        if (/^\s+$/.test(tok)) continue;
+        if (measure(tok) <= maxWidth) { line = tok; continue; }
+        const broken = breakWord(tok);
+        for (let i = 0; i < broken.length - 1; i++) result.push(broken[i]);
+        line = broken[broken.length - 1];
+      }
+      if (line.trim()) result.push(line.replace(/\s+$/, ''));
+    });
+    return result.length ? result : [''];
   }
 
   function startTextDrag(e) {
@@ -2075,11 +2148,19 @@
     const startCX = e.clientX, startCY = e.clientY;
     const origX = parseFloat(text.getAttribute('x'));
     const origY = parseFloat(text.getAttribute('y'));
-    let moved = false;
+    // Each tspan has its own explicit x attribute, which overrides the parent
+    // text's x. Capture each tspan's original x so we can shift them in lockstep.
+    const tspans = Array.from(text.querySelectorAll('tspan'));
+    const tspanOrigX = tspans.map(ts => {
+      const v = parseFloat(ts.getAttribute('x'));
+      return Number.isFinite(v) ? v : origX;
+    });
     const onMove = (ev) => {
-      moved = true;
-      text.setAttribute('x', origX + (ev.clientX - startCX));
-      text.setAttribute('y', origY + (ev.clientY - startCY));
+      const dx = ev.clientX - startCX;
+      const dy = ev.clientY - startCY;
+      text.setAttribute('x', origX + dx);
+      text.setAttribute('y', origY + dy);
+      tspans.forEach((ts, i) => ts.setAttribute('x', tspanOrigX[i] + dx));
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove, true);
@@ -2096,7 +2177,9 @@
     const x = parseFloat(text.getAttribute('x'));
     const fontSize = parseInt(text.getAttribute('font-size'), 10) || 16;
     const y = parseFloat(text.getAttribute('y')) - fontSize;
-    const oldValue = text.textContent;
+    const oldValue = text.dataset.rawText || text.textContent;
+    const boxWidth = parseFloat(text.dataset.boxWidth) || 240;
+    const boxHeight = parseFloat(text.dataset.boxHeight) || 0;
     const color = text.getAttribute('fill') || markupColor;
     text.remove();
     // Reuse the existing editor at that location, seeded with the old value
@@ -2104,8 +2187,12 @@
     markupTool = 'text';
     const prevColor = markupColor;
     markupColor = color;
-    showTextEditor(x, y);
-    if (markupTextEditor) markupTextEditor.value = oldValue;
+    showTextEditor(x, y, { width: boxWidth, height: boxHeight });
+    if (markupTextEditor) {
+      markupTextEditor.value = oldValue;
+      // Trigger auto-grow to fit existing content.
+      markupTextEditor.dispatchEvent(new Event('input'));
+    }
     markupColor = prevColor;
     markupTool = tool;
   }
@@ -2638,6 +2725,7 @@
   chrome.runtime.onMessage.addListener((msg,_,res) => {
     if(msg.action==='inspect-page'){data=scan();tab='overview';if(!markupCapturesLoaded) loadCaptures();render();res({status:'Panel opened.'});}
     else if(msg.action==='pick-element'){data=data||scan();tab='inspector';if(!markupCapturesLoaded) loadCaptures();render();startPick();res({status:'Click an element.'});}
+    else if(msg.action==='start-markup'){data=data||scan();if(!markupCapturesLoaded) loadCaptures();startMarkup();res({status:'Mockup mode on.'});}
     return true;
   });
 })();
