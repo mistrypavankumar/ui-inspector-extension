@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UI Inspector — Panel Mockup v1 (Light)</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   RESET & PAGE
+   ═══════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #e8e8ee;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 40px 20px;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOKENS
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  --bg-panel: #ffffff;
+  --bg-bar: #fafafa;
+  --bg-card: #f6f6f9;
+  --bg-hover: rgba(0,0,0,0.025);
+  --border: #e8e8ee;
+  --border-card: #e2e2ea;
+  --accent: #6950E8;
+  --accent-light: #6950E8;
+  --accent-bg: rgba(105,80,232,0.08);
+  --text-title: #1a1a2e;
+  --text-body: #333346;
+  --text-muted: #8888a0;
+  --text-dim: #a0a0b4;
+  --text-ghost: #c8c8d4;
+  --badge-bg: #ededf4;
+  --badge-text: #6a6a80;
+  --radius-card: 10px;
+  --radius-btn: 7px;
+  --font-mono: 'SF Mono','Fira Code','Cascadia Code','JetBrains Mono',monospace;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PANEL SHELL
+   ═══════════════════════════════════════════════════════════ */
+.panel {
+  width: 380px;
+  height: 780px;
+  background: var(--bg-panel);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 48px rgba(0,0,0,0.10), 0 0 0 1px var(--border);
+  position: relative;
+}
+
+/* ── Top Bar ──────────────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 14px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-bar);
+}
+.topbar-left { display: flex; align-items: center; gap: 10px; }
+.topbar-right { display: flex; align-items: center; gap: 2px; }
+
+.drag-dots {
+  display: grid; grid-template-columns: repeat(2, 4px); gap: 3px;
+  opacity: 0.3; cursor: grab;
+}
+.drag-dots span {
+  width: 4px; height: 4px; background: #bbb; border-radius: 50%;
+}
+
+.toggle {
+  width: 38px; height: 22px; border-radius: 11px;
+  background: var(--accent); position: relative; cursor: pointer;
+  flex-shrink: 0;
+}
+.toggle::after {
+  content: ''; position: absolute; top: 3px; right: 3px;
+  width: 16px; height: 16px; border-radius: 50%; background: #fff;
+}
+
+.topbar-label { font-size: 13px; font-weight: 600; color: var(--text-title); }
+
+.icon-btn {
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  border: none; background: none; color: #999; cursor: pointer; border-radius: 6px;
+  transition: all .12s;
+}
+.icon-btn:hover { background: rgba(0,0,0,.05); color: #555; }
+.icon-btn svg { width: 16px; height: 16px; fill: currentColor; }
+
+/* ── Content ──────────────────────────────────────────── */
+.content {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+}
+.content::-webkit-scrollbar { width: 4px; }
+.content::-webkit-scrollbar-track { background: transparent; }
+.content::-webkit-scrollbar-thumb { background: #d0d0dd; border-radius: 4px; }
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ── Bottom Tab Bar ───────────────────────────────────── */
+.tabbar {
+  display: flex; flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-bar);
+  padding: 4px 6px 6px;
+}
+.tab {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 7px 0 3px; border: none; background: none; color: #aaa;
+  cursor: pointer; border-radius: 8px; transition: all .15s;
+  position: relative; font-family: inherit;
+}
+.tab svg { width: 20px; height: 20px; fill: currentColor; }
+.tab-label { font-size: 9px; font-weight: 600; letter-spacing: .3px; color: currentColor; }
+.tab:hover { color: #666; background: rgba(0,0,0,.03); }
+.tab.active { color: var(--accent-light); background: var(--accent-bg); }
+.tab.active::after {
+  content: ''; position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%);
+  width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SHARED COMPONENTS
+   ═══════════════════════════════════════════════════════════ */
+.section { border-bottom: 1px solid var(--border); }
+.section:last-child { border-bottom: none; }
+
+.section-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px 10px;
+}
+.section-title {
+  font-size: 15px; font-weight: 700; color: var(--text-title);
+  display: flex; align-items: center; gap: 8px;
+}
+.count {
+  background: var(--badge-bg); color: var(--badge-text);
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px;
+}
+.section-body { padding: 0 18px 16px; }
+
+.btn-outline {
+  font-size: 11.5px; font-weight: 600; color: var(--text-body);
+  background: none; border: 1px solid var(--border-card); padding: 5px 14px;
+  border-radius: var(--radius-btn); cursor: pointer; font-family: inherit;
+  transition: all .12s;
+}
+.btn-outline:hover { background: rgba(0,0,0,.03); border-color: #bbb; }
+
+.btn-accent {
+  font-size: 11.5px; font-weight: 600; color: #fff;
+  background: var(--accent); border: none; padding: 5px 14px;
+  border-radius: var(--radius-btn); cursor: pointer; font-family: inherit;
+}
+
+.upgrade-badge {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 600; color: var(--accent-light);
+  background: var(--accent-bg); border: 1px solid rgba(105,80,232,.2);
+  padding: 4px 12px; border-radius: 20px; cursor: pointer;
+}
+.upgrade-badge svg { width: 14px; height: 14px; fill: #e879f9; }
+
+/* ═══════════════════════════════════════════════════════════
+   TAB 1: OVERVIEW
+   ═══════════════════════════════════════════════════════════ */
+.page-info { padding: 20px 18px; border-bottom: 1px solid var(--border); }
+.page-name { font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 3px; }
+.page-url { font-size: 11.5px; color: var(--text-muted); word-break: break-all; line-height: 1.5; }
+
+.font-card {
+  border: 1px solid var(--border-card); border-radius: var(--radius-card);
+  padding: 14px 16px; margin-bottom: 8px; background: var(--bg-card);
+  transition: border-color .12s;
+}
+.font-card:hover { border-color: #c8c8d8; }
+.font-card-label { font-size: 11px; color: var(--text-muted); font-weight: 500; margin-bottom: 5px; }
+.font-card-name { font-size: 16px; font-weight: 600; color: var(--text-body); }
+
+.palette-row { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+.palette-dot {
+  width: 32px; height: 32px; border-radius: 8px;
+  border: 1px solid rgba(0,0,0,.08); cursor: pointer;
+  transition: transform .12s, box-shadow .15s;
+}
+.palette-dot:hover { transform: scale(1.15); box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+.show-all {
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  background: none; border: none; cursor: pointer; font-family: inherit;
+  padding: 4px 8px; margin-left: 2px;
+}
+.show-all:hover { text-decoration: underline; }
+
+.stats-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.stat-card {
+  border: 1px solid var(--border-card); border-radius: var(--radius-card);
+  padding: 14px 16px; background: var(--bg-card);
+}
+.stat-card-label { font-size: 11px; color: var(--text-muted); font-weight: 500; margin-bottom: 4px; }
+.stat-card-value { font-size: 22px; font-weight: 700; color: var(--text-title); }
+
+/* Contrast Scanner */
+.contrast-card {
+  border: 1px solid var(--border-card); border-radius: var(--radius-card);
+  padding: 12px 16px; margin-bottom: 8px; background: var(--bg-card);
+  display: flex; align-items: center; gap: 12px;
+}
+.contrast-icon {
+  width: 32px; height: 32px; border-radius: 6px; background: var(--bg-card);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: var(--text-muted); flex-shrink: 0;
+}
+.contrast-ratio { font-size: 14px; font-weight: 600; color: var(--text-body); flex: 1; }
+.contrast-badge {
+  font-size: 10.5px; font-weight: 600; padding: 3px 10px; border-radius: 12px;
+}
+.contrast-badge.poor { background: rgba(239,68,68,.12); color: #f87171; }
+.contrast-badge.good { background: rgba(34,197,94,.12); color: #4ade80; }
+
+/* ═══════════════════════════════════════════════════════════
+   TAB 2: COLORS
+   ═══════════════════════════════════════════════════════════ */
+.color-band {
+  margin: 0 18px 8px; padding: 16px 18px; border-radius: var(--radius-card);
+  cursor: pointer; transition: transform .1s, box-shadow .15s;
+  min-height: 56px; display: flex; flex-direction: column; justify-content: center;
+}
+.color-band:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,0,0,.10); }
+.color-band-hex {
+  font-size: 14px; font-weight: 700; font-family: var(--font-mono); letter-spacing: .3px;
+}
+.color-band-count { font-size: 11px; opacity: .55; margin-top: 2px; }
+
+.color-tab-pills {
+  display: flex; background: #f0f0f5; border-radius: 8px; padding: 3px; gap: 2px;
+  margin: 0 18px 14px;
+}
+.pill {
+  flex: 1; text-align: center; padding: 7px 0; font-size: 12px; font-weight: 600;
+  border: none; background: none; color: #999; border-radius: 6px; cursor: pointer;
+  font-family: inherit; transition: all .12s;
+}
+.pill.active { background: #fff; color: var(--text-title); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+/* ═══════════════════════════════════════════════════════════
+   TAB 3: TYPOGRAPHY
+   ═══════════════════════════════════════════════════════════ */
+.typo-card {
+  border: 1px solid var(--border-card); border-radius: var(--radius-card);
+  padding: 18px 20px; margin: 0 18px 10px; background: var(--bg-card);
+  transition: border-color .12s;
+}
+.typo-card:hover { border-color: #c8c8d8; }
+.typo-card-title { font-size: 14px; font-weight: 600; color: var(--text-body); margin-bottom: 2px; }
+.typo-card-sub { font-size: 11.5px; color: var(--text-muted); margin-bottom: 12px; }
+.typo-preview {
+  font-size: 28px; color: #aaa; overflow: hidden; white-space: nowrap;
+  text-overflow: ellipsis; line-height: 1.3; margin-bottom: 8px;
+}
+.typo-link {
+  font-size: 11.5px; font-weight: 600; color: var(--accent);
+  cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+}
+.typo-link:hover { text-decoration: underline; }
+
+/* ═══════════════════════════════════════════════════════════
+   TAB 4: ASSETS
+   ═══════════════════════════════════════════════════════════ */
+.assets-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px 12px;
+}
+.view-toggle { display: flex; gap: 2px; }
+.view-btn {
+  width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-card); background: none; color: #aaa; border-radius: 6px; cursor: pointer;
+  transition: all .12s;
+}
+.view-btn.active { background: var(--accent-bg); color: var(--accent-light); border-color: rgba(105,80,232,.3); }
+.view-btn svg { width: 14px; height: 14px; fill: currentColor; }
+
+.assets-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 18px 16px;
+}
+.asset-card-grid {
+  border: 1px solid var(--border-card); border-radius: 8px; overflow: hidden;
+  background: #f0f0f0; aspect-ratio: 1; display: flex; align-items: center;
+  justify-content: center; cursor: pointer; transition: border-color .12s;
+  position: relative;
+}
+.asset-card-grid:hover { border-color: var(--accent); }
+.asset-card-grid .asset-placeholder {
+  width: 50px; height: 50px; border-radius: 8px; display: flex; align-items: center;
+  justify-content: center;
+}
+
+.assets-list { padding: 0 18px 16px; }
+.asset-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 0;
+  border-bottom: 1px solid var(--border); transition: background .08s;
+}
+.asset-row:last-child { border-bottom: none; }
+.asset-thumb {
+  width: 48px; height: 48px; border-radius: 6px; background: #f0f0f0;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  overflow: hidden;
+}
+.asset-thumb svg { width: 28px; height: 28px; }
+.asset-info { flex: 1; min-width: 0; }
+.asset-name {
+  font-size: 12.5px; color: var(--text-body); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.asset-size { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+.asset-dl {
+  width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+  border: none; background: none; color: #bbb; cursor: pointer; border-radius: 6px;
+}
+.asset-dl:hover { background: rgba(0,0,0,.04); color: #666; }
+.asset-dl svg { width: 16px; height: 16px; fill: currentColor; }
+
+/* ═══════════════════════════════════════════════════════════
+   TAB 5: INSPECTOR
+   ═══════════════════════════════════════════════════════════ */
+.insp-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px; border-bottom: 1px solid var(--border);
+}
+.insp-bar-left { display: flex; align-items: center; gap: 8px; }
+.insp-bar-title { font-size: 14px; font-weight: 600; color: var(--text-title); }
+
+.insp-identity { padding: 16px 18px 12px; border-bottom: 1px solid var(--border); }
+.insp-type { font-size: 12px; color: var(--text-muted); font-weight: 500; margin-bottom: 4px; }
+.insp-selector {
+  font-size: 15px; font-weight: 600; line-height: 1.45; word-break: break-all;
+}
+.s-tag { color: #6950E8; }
+.s-cls { color: #16a34a; }
+.s-id { color: #d97706; }
+
+.insp-toggle {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 18px; border-bottom: 1px solid var(--border); cursor: pointer;
+}
+.mini-toggle {
+  width: 34px; height: 20px; border-radius: 10px; background: #d4d4dd;
+  position: relative; flex-shrink: 0;
+}
+.mini-toggle::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 14px; height: 14px; border-radius: 50%; background: #fff;
+}
+.insp-toggle-label { font-size: 12.5px; color: var(--text-muted); }
+
+/* Box Model */
+.boxmodel { padding: 20px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: center; }
+.bm-wrap { width: 100%; max-width: 280px; }
+.bm-margin {
+  border: 1.5px dashed rgba(0,0,0,.10); border-radius: 10px;
+  padding: 20px 26px; position: relative;
+}
+.bm-padding {
+  border: 1.5px dashed rgba(0,0,0,.10); border-radius: 8px;
+  padding: 18px 22px; position: relative;
+}
+.bm-content {
+  background: rgba(105,80,232,.04); border: 1.5px solid rgba(105,80,232,.18);
+  border-radius: 6px; padding: 10px; text-align: center;
+}
+.bm-size {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-title);
+  background: #f0f0f5; padding: 4px 12px; border-radius: 5px; display: inline-block;
+}
+.bm-v {
+  position: absolute; font-family: var(--font-mono);
+  font-size: 10px; color: var(--text-dim);
+}
+.bm-v-0 { color: var(--text-ghost); }
+.bm-v-t { top: 4px; left: 50%; transform: translateX(-50%); }
+.bm-v-r { right: 6px; top: 50%; transform: translateY(-50%); }
+.bm-v-b { bottom: 4px; left: 50%; transform: translateX(-50%); }
+.bm-v-l { left: 6px; top: 50%; transform: translateY(-50%); }
+
+/* Property Rows */
+.prop-section { border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.prop-title { font-size: 14px; font-weight: 700; color: var(--text-title); padding: 14px 18px 8px; }
+.prop-row {
+  display: flex; align-items: center; padding: 5px 18px; min-height: 32px;
+  transition: background .08s;
+}
+.prop-row:hover { background: var(--bg-hover); }
+.prop-key { width: 120px; flex-shrink: 0; font-size: 12.5px; color: var(--text-muted); font-weight: 500; }
+.prop-val {
+  flex: 1; font-size: 13px; color: var(--text-body); font-weight: 500;
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.prop-mono { font-family: var(--font-mono); font-size: 12px; }
+.prop-copy {
+  width: 24px; height: 24px; display: none; align-items: center; justify-content: center;
+  border: none; background: none; color: #bbb; cursor: pointer; border-radius: 4px; flex-shrink: 0;
+}
+.prop-row:hover .prop-copy { display: flex; }
+.prop-copy:hover { background: rgba(0,0,0,.05); color: #666; }
+.prop-copy svg { width: 13px; height: 13px; fill: currentColor; }
+
+.swatch {
+  width: 18px; height: 18px; border-radius: 4px;
+  border: 1px solid rgba(0,0,0,.08); flex-shrink: 0;
+}
+.swatch-lg { width: 36px; height: 36px; border-radius: 7px; }
+
+.insp-color-row {
+  display: flex; align-items: center; gap: 12px; padding: 8px 18px;
+  transition: background .08s; cursor: pointer;
+}
+.insp-color-row:hover { background: var(--bg-hover); }
+.insp-color-info { flex: 1; }
+.insp-color-label { font-size: 11px; color: var(--text-dim); }
+.insp-color-hex {
+  font-size: 13px; font-weight: 600; color: var(--text-body);
+  font-family: var(--font-mono);
+}
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <!-- ── TOP BAR ──────────────────────────────────────── -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="drag-dots">
+        <span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="toggle"></div>
+      <span class="topbar-label">Inspect Mode</span>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn">
+        <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zm0 10h8v8H3zm10-10h8v8h-8zm0 10h8v8h-8z"/></svg>
+      </button>
+      <button class="icon-btn">
+        <svg viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+      </button>
+      <button class="icon-btn" onclick="document.querySelector('.panel').style.display='none'">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── CONTENT ──────────────────────────────────────── -->
+  <div class="content">
+
+    <!-- ═══ TAB 1: OVERVIEW ═══ -->
+    <div class="tab-content active" id="tab-overview">
+
+      <div class="page-info">
+        <div class="page-name">Daxwell</div>
+        <div class="page-url">https://dev.d3m9nmn0p35c2z.amplifyapp.com/</div>
+      </div>
+
+      <!-- Typography Summary -->
+      <div class="section">
+        <div class="section-hdr">
+          <span class="section-title">Typography</span>
+        </div>
+        <div class="section-body">
+          <div class="font-card">
+            <div class="font-card-label">Headings</div>
+            <div class="font-card-name" style="font-family:'Barlow',sans-serif;font-weight:700">Barlow</div>
+          </div>
+          <div class="font-card">
+            <div class="font-card-label">Body</div>
+            <div class="font-card-name" style="font-family:'Public Sans',sans-serif">Public Sans Variable</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Color Palette -->
+      <div class="section">
+        <div class="section-hdr">
+          <span class="section-title">Color Palette</span>
+        </div>
+        <div class="section-body">
+          <div class="palette-row">
+            <div class="palette-dot" style="background:#111827"></div>
+            <div class="palette-dot" style="background:#34d399"></div>
+            <div class="palette-dot" style="background:#1a1a2e"></div>
+            <div class="palette-dot" style="background:#6950E8"></div>
+            <div class="palette-dot" style="background:#8D9EAD"></div>
+            <div class="palette-dot" style="background:#6a6a88"></div>
+            <div class="palette-dot" style="background:#a78bfa"></div>
+            <div class="palette-dot" style="background:#333"></div>
+            <div class="palette-dot" style="background:#f87171"></div>
+            <button class="show-all" onclick="switchTab('colors')">Show all</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contrast Scanner -->
+      <div class="section">
+        <div class="section-hdr">
+          <span class="section-title">Contrast Scanner <span class="count">12</span></span>
+        </div>
+        <div class="section-body">
+          <div class="contrast-card">
+            <div class="contrast-icon">Aa</div>
+            <span class="contrast-ratio">2.65 : 1</span>
+            <span class="contrast-badge poor">Very Poor</span>
+          </div>
+          <div class="contrast-card">
+            <div class="contrast-icon">Aa</div>
+            <span class="contrast-ratio">7.42 : 1</span>
+            <span class="contrast-badge good">AA Pass</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Page Stats -->
+      <div class="section">
+        <div class="section-hdr">
+          <span class="section-title">Page Stats</span>
+        </div>
+        <div class="section-body">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-card-label">Colors</div>
+              <div class="stat-card-value">41</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-label">Font Styles</div>
+              <div class="stat-card-value">17</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-label">Assets</div>
+              <div class="stat-card-value">12</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-label">Classes</div>
+              <div class="stat-card-value">284</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══ TAB 2: COLORS ═══ -->
+    <div class="tab-content" id="tab-colors">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px">
+        <span class="section-title">Colors <span class="count">41</span></span>
+        <button class="btn-outline">Export All</button>
+      </div>
+
+      <div class="color-tab-pills">
+        <button class="pill active">Palette</button>
+        <button class="pill">Categories</button>
+      </div>
+
+      <!-- Gradient bands -->
+      <div class="color-band" style="background:linear-gradient(300deg,#fb923c,#f59e0b,#34d399);color:#111">
+        <span class="color-band-hex">300&deg; Linear Gradient</span>
+        <span class="color-band-count">1 instance</span>
+      </div>
+      <div class="color-band" style="background:linear-gradient(135deg,#f87171,#fca5a5);color:#111">
+        <span class="color-band-hex">135&deg; Linear Gradient</span>
+        <span class="color-band-count">1 instance</span>
+      </div>
+      <div class="color-band" style="background:linear-gradient(135deg,#a78bfa,#f0abfc);color:#111">
+        <span class="color-band-hex">135&deg; Linear Gradient</span>
+        <span class="color-band-count">1 instance</span>
+      </div>
+      <div class="color-band" style="background:linear-gradient(135deg,#22d3ee,#67e8f9);color:#111">
+        <span class="color-band-hex">135&deg; Linear Gradient</span>
+        <span class="color-band-count">1 instance</span>
+      </div>
+
+      <!-- Solid colors -->
+      <div class="color-band" style="background:#111827;color:#fff">
+        <span class="color-band-hex">#111827</span>
+        <span class="color-band-count">248 instances</span>
+      </div>
+      <div class="color-band" style="background:#1a1a2e;color:#ddd">
+        <span class="color-band-hex">#1A1A2E</span>
+        <span class="color-band-count">86 instances</span>
+      </div>
+      <div class="color-band" style="background:#6950E8;color:#fff">
+        <span class="color-band-hex">#6950E8</span>
+        <span class="color-band-count">34 instances</span>
+      </div>
+      <div class="color-band" style="background:#8D9EAD;color:#111">
+        <span class="color-band-hex">#8D9EAD</span>
+        <span class="color-band-count">22 instances</span>
+      </div>
+      <div class="color-band" style="background:#ffffff;color:#111">
+        <span class="color-band-hex">#FFFFFF</span>
+        <span class="color-band-count">18 instances</span>
+      </div>
+
+    </div>
+
+    <!-- ═══ TAB 3: TYPOGRAPHY ═══ -->
+    <div class="tab-content" id="tab-typography">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px">
+        <span class="section-title">Typography <span class="count">17</span></span>
+        <span class="upgrade-badge">
+          <svg viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 16h2v2h-2zm0-6h2v4h-2z"/></svg>
+          Upgrade
+        </span>
+      </div>
+
+      <div class="typo-card">
+        <div class="typo-card-title">Heading 1</div>
+        <div class="typo-card-sub">14 instances</div>
+        <div class="typo-preview" style="font-family:'Barlow',sans-serif;font-weight:700;font-size:30px">AaBbCcDdEeFfGgHhIiJjK</div>
+        <span class="typo-link">Show 16 occurrences &rsaquo;</span>
+      </div>
+
+      <div class="typo-card">
+        <div class="typo-card-title">Body &mdash; 14px / Semi Bold (600)</div>
+        <div class="typo-card-sub">86 instances</div>
+        <div class="typo-preview" style="font-family:'Public Sans',sans-serif;font-weight:600;font-size:22px">AaBbCcDdEeFfGgHhIiJjK</div>
+        <span class="typo-link">Show 86 occurrences &rsaquo;</span>
+      </div>
+
+      <div class="typo-card">
+        <div class="typo-card-title">Body &mdash; 13px / Regular (400)</div>
+        <div class="typo-card-sub">142 instances</div>
+        <div class="typo-preview" style="font-family:'Public Sans',sans-serif;font-weight:400;font-size:20px">AaBbCcDdEeFfGgHhIiJjK</div>
+        <span class="typo-link">Show 142 occurrences &rsaquo;</span>
+      </div>
+
+      <div class="typo-card">
+        <div class="typo-card-title">Caption &mdash; 11px / Medium (500)</div>
+        <div class="typo-card-sub">38 instances</div>
+        <div class="typo-preview" style="font-family:'Public Sans',sans-serif;font-weight:500;font-size:16px">AaBbCcDdEeFfGgHhIiJjK</div>
+        <span class="typo-link">Show 38 occurrences &rsaquo;</span>
+      </div>
+
+    </div>
+
+    <!-- ═══ TAB 4: ASSETS ═══ -->
+    <div class="tab-content" id="tab-assets">
+
+      <div class="assets-hdr">
+        <span class="section-title">Assets <span class="count">12</span></span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-outline">Export All</button>
+          <div class="view-toggle">
+            <button class="view-btn" onclick="showAssetsView('grid',this)">
+              <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zm0 10h8v8H3zm10-10h8v8h-8zm0 10h8v8h-8z"/></svg>
+            </button>
+            <button class="view-btn active" onclick="showAssetsView('list',this)">
+              <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid View (hidden by default) -->
+      <div class="assets-grid" id="assets-grid" style="display:none">
+        <div class="asset-card-grid"><div class="asset-placeholder" style="background:#e0e0e0;width:100%;height:100%"></div></div>
+        <div class="asset-card-grid"><div class="asset-placeholder" style="background:#f0f0f0;width:100%;height:100%"></div></div>
+        <div class="asset-card-grid">
+          <svg viewBox="0 0 24 24" width="48" height="48"><circle cx="12" cy="12" r="10" fill="#111"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold">i</text></svg>
+        </div>
+        <div class="asset-card-grid"><div class="asset-placeholder" style="background:#ddd;width:100%;height:100%"></div></div>
+        <div class="asset-card-grid"><div class="asset-placeholder" style="background:#ccc;width:100%;height:100%;border-radius:50%"></div></div>
+        <div class="asset-card-grid"><div class="asset-placeholder" style="background:#e8e8e8;width:100%;height:100%"></div></div>
+      </div>
+
+      <!-- List View -->
+      <div class="assets-list" id="assets-list">
+        <div class="asset-row">
+          <div class="asset-thumb" style="background:#e8e8e8"><svg viewBox="0 0 24 24" width="28" height="28"><rect x="2" y="6" width="20" height="12" rx="2" fill="#bbb"/></svg></div>
+          <div class="asset-info">
+            <div class="asset-name">daxwell-logo-full.png&amp;w=640&amp;...</div>
+            <div class="asset-size">1.35 KB</div>
+          </div>
+          <button class="asset-dl"><svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
+        </div>
+        <div class="asset-row">
+          <div class="asset-thumb" style="background:#f0f0f0"><svg viewBox="0 0 24 24" width="28" height="28"><rect x="4" y="8" width="16" height="8" rx="2" fill="#ccc"/></svg></div>
+          <div class="asset-info">
+            <div class="asset-name">daxwell-logo-single.png&amp;w=25...</div>
+            <div class="asset-size">968 B</div>
+          </div>
+          <button class="asset-dl"><svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
+        </div>
+        <div class="asset-row">
+          <div class="asset-thumb" style="background:#fff">
+            <svg viewBox="0 0 24 24" width="28" height="28"><circle cx="12" cy="12" r="10" fill="#111"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold">i</text></svg>
+          </div>
+          <div class="asset-info">
+            <div class="asset-name">svg+xml;base64,PHN2ZyB4b...</div>
+            <div class="asset-size">414 B</div>
+          </div>
+          <button class="asset-dl"><svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
+        </div>
+        <div class="asset-row">
+          <div class="asset-thumb" style="background:#f5f5f5">
+            <svg viewBox="0 0 24 24" width="28" height="28"><rect x="4" y="5" width="16" height="3" rx="1.5" fill="#222"/><rect x="4" y="10" width="16" height="3" rx="1.5" fill="#222"/><rect x="4" y="15" width="12" height="3" rx="1.5" fill="#222"/></svg>
+          </div>
+          <div class="asset-info">
+            <div class="asset-name">svg+xml;base64,PHN2ZyB4b...</div>
+            <div class="asset-size">892 B</div>
+          </div>
+          <button class="asset-dl"><svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
+        </div>
+        <div class="asset-row">
+          <div class="asset-thumb" style="background:#eee">
+            <svg viewBox="0 0 24 24" width="28" height="28"><circle cx="12" cy="12" r="8" fill="#999"/><circle cx="12" cy="12" r="3" fill="#333"/></svg>
+          </div>
+          <div class="asset-info">
+            <div class="asset-name">svg+xml;base64,PHN2ZyBjb...</div>
+            <div class="asset-size">1.76 KB</div>
+          </div>
+          <button class="asset-dl"><svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
+        </div>
+        <div class="asset-row">
+          <div class="asset-thumb" style="background:#f8f8f8">
+            <svg viewBox="0 0 24 24" width="28" height="28"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" fill="#333"/></svg>
+          </div>
+          <div class="asset-info">
+            <div class="asset-name">svg+xml;base64,PHN2ZyBjb...</div>
+            <div class="asset-size">138 B</div>
+          </div>
+          <button class="asset-dl"><svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══ TAB 5: INSPECTOR ═══ -->
+    <div class="tab-content" id="tab-inspector">
+
+      <div class="insp-bar">
+        <div class="insp-bar-left">
+          <button class="icon-btn">
+            <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+          </button>
+          <span class="insp-bar-title">Inspector</span>
+        </div>
+        <button class="btn-outline">Show code</button>
+      </div>
+
+      <!-- Identity -->
+      <div class="insp-identity">
+        <div class="insp-type">Div</div>
+        <div class="insp-selector">
+          <span class="s-tag">header</span><span class="s-cls">.MuiPaper-root</span>
+        </div>
+      </div>
+
+      <!-- Context menu toggle -->
+      <div class="insp-toggle">
+        <div class="mini-toggle"></div>
+        <span class="insp-toggle-label">Context menu while hovering</span>
+      </div>
+
+      <!-- Box Model -->
+      <div class="boxmodel">
+        <div class="bm-wrap">
+          <div class="bm-margin">
+            <span class="bm-v bm-v-0 bm-v-t">-</span>
+            <span class="bm-v bm-v-0 bm-v-r">-</span>
+            <span class="bm-v bm-v-0 bm-v-b">-</span>
+            <span class="bm-v bm-v-0 bm-v-l">-</span>
+            <div class="bm-padding">
+              <span class="bm-v bm-v-0 bm-v-t">-</span>
+              <span class="bm-v bm-v-0 bm-v-r">-</span>
+              <span class="bm-v bm-v-0 bm-v-b">-</span>
+              <span class="bm-v bm-v-0 bm-v-l">-</span>
+              <div class="bm-content">
+                <span class="bm-size">1920 X 72</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Text Properties -->
+      <div class="prop-section">
+        <div class="prop-title">Text properties</div>
+        <div class="prop-row">
+          <span class="prop-key">Font Family</span>
+          <span class="prop-val">"Public Sans Variable", -apple-syste...</span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-key">Font Size</span>
+          <span class="prop-val"><strong>15px</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-key">Line Height</span>
+          <span class="prop-val"><strong>23.25px</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-key">Font Weight</span>
+          <span class="prop-val"><strong>Regular (400)</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-key">Letter Spacing</span>
+          <span class="prop-val"><strong>normal</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-key">Text color</span>
+          <span class="prop-val">
+            <span class="swatch" style="background:#fff;border-color:rgba(0,0,0,.15)"></span>
+            <strong>#FFFFFF</strong>
+          </span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+      </div>
+
+      <!-- Colors -->
+      <div class="prop-section">
+        <div class="prop-title">Colors</div>
+        <div class="insp-color-row">
+          <div class="swatch swatch-lg" style="background:#8D9EAD"></div>
+          <div class="insp-color-info">
+            <div class="insp-color-label">Background</div>
+            <div class="insp-color-hex">#8D9EAD</div>
+          </div>
+          <button class="prop-copy" style="display:flex;color:#bbb"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="insp-color-row">
+          <div class="swatch swatch-lg" style="background:#8D9EAD"></div>
+          <div class="insp-color-info">
+            <div class="insp-color-label">Border</div>
+            <div class="insp-color-hex">#8D9EAD</div>
+          </div>
+          <button class="prop-copy" style="display:flex;color:#bbb"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+      </div>
+
+      <!-- Layout -->
+      <div class="prop-section">
+        <div class="prop-title">Layout</div>
+        <div class="prop-row">
+          <span class="prop-key">Display</span>
+          <span class="prop-val"><strong>flex</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-key">Position</span>
+          <span class="prop-val"><strong>relative</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-key">Width</span>
+          <span class="prop-val"><strong>1920px</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-key">Height</span>
+          <span class="prop-val"><strong>72px</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-key">Align Items</span>
+          <span class="prop-val"><strong>center</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-key">Justify</span>
+          <span class="prop-val"><strong>center</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+      </div>
+
+      <!-- Decoration -->
+      <div class="prop-section">
+        <div class="prop-title">Decoration</div>
+        <div class="prop-row">
+          <span class="prop-key">Border</span>
+          <span class="prop-val"><strong>1px solid</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+        <div class="prop-row">
+          <span class="prop-key">Border Radius</span>
+          <span class="prop-val"><strong>10px</strong></span>
+          <button class="prop-copy"><svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- ── BOTTOM TAB BAR ───────────────────────────────── -->
+  <div class="tabbar">
+    <button class="tab active" onclick="switchTab('overview')">
+      <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zm0 10h8v8H3zm10-10h8v8h-8zm0 10h8v8h-8z"/></svg>
+      <span class="tab-label">Overview</span>
+    </button>
+    <button class="tab" onclick="switchTab('colors')">
+      <svg viewBox="0 0 24 24"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0L12 2.69z"/></svg>
+      <span class="tab-label">Colors</span>
+    </button>
+    <button class="tab" onclick="switchTab('typography')">
+      <svg viewBox="0 0 24 24"><path d="M9.93 13.5h4.14L12 7.98zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-4.05 16.5l-1.14-3H9.17l-1.12 3H5.96l5.11-13h1.86l5.11 13h-2.09z"/></svg>
+      <span class="tab-label">Type</span>
+    </button>
+    <button class="tab" onclick="switchTab('assets')">
+      <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+      <span class="tab-label">Assets</span>
+    </button>
+    <button class="tab" onclick="switchTab('inspector')">
+      <svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/></svg>
+      <span class="tab-label">Inspect</span>
+    </button>
+  </div>
+</div>
+
+<script>
+function switchTab(id) {
+  // Hide all tab content
+  document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+  // Deactivate all tabs
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+
+  // Show target
+  const target = document.getElementById('tab-' + id);
+  if (target) target.classList.add('active');
+
+  // Activate tab button
+  const tabs = document.querySelectorAll('.tab');
+  const tabMap = ['overview','colors','typography','assets','inspector'];
+  const idx = tabMap.indexOf(id);
+  if (idx >= 0 && tabs[idx]) tabs[idx].classList.add('active');
+
+  // Scroll to top
+  document.querySelector('.content').scrollTop = 0;
+}
+
+function showAssetsView(mode, btn) {
+  const grid = document.getElementById('assets-grid');
+  const list = document.getElementById('assets-list');
+  document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (mode === 'grid') {
+    grid.style.display = 'grid';
+    list.style.display = 'none';
+  } else {
+    grid.style.display = 'none';
+    list.style.display = 'block';
+  }
+}
+</script>
+
+</body>
+</html>
